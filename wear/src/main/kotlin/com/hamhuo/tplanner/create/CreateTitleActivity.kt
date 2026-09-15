@@ -50,7 +50,7 @@ class CreateTitleActivity : WearPageActivity() {
             background = wearInteractiveBackground(fill = WEAR_INPUT)
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                    continueToType()
+                    continueToTime()
                     true
                 } else {
                     false
@@ -97,7 +97,7 @@ class CreateTitleActivity : WearPageActivity() {
         propagateCreationResult(requestCode, resultCode)
     }
 
-    private fun continueToType() {
+    private fun continueToTime() {
         val taskTitle = titleInput.text?.toString()?.trim().orEmpty()
         if (taskTitle.isEmpty()) {
             titleInput.error = getString(R.string.task_create_title_required)
@@ -107,7 +107,7 @@ class CreateTitleActivity : WearPageActivity() {
         titleInput.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         @Suppress("DEPRECATION")
         startActivityForResult(
-            CreateTypeActivity.createIntent(
+            CreateTimeActivity.createIntent(
                 this,
                 CreationRoute(draftId, draftUpdatedAtEpochMs, taskTitle),
             ),

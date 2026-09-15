@@ -20,7 +20,7 @@ class CreateTimeActivity : WearPageActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = getString(R.string.task_create_time_page)
-        val route = intent.creationRouteOrNull()?.takeIf { !it.type.isNullOrBlank() } ?: run {
+        val route = intent.creationRouteOrNull() ?: run {
             finish()
             return
         }
@@ -48,6 +48,21 @@ class CreateTimeActivity : WearPageActivity() {
                 @Suppress("DEPRECATION")
                 startActivityForResult(
                     CreateDateActivity.createIntent(this@CreateTimeActivity, route.copy(hour = hour, minute = minute)),
+                    REQUEST_CREATION_NEXT,
+                )
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8) })
+            // No time is a real answer: the canonical document then carries no DTSTART/DUE at all
+            // and no date is invented for it.
+            addView(creationActionRow(R.string.task_create_no_time) {
+                if (destinationOpened) return@creationActionRow
+                destinationOpened = true
+                @Suppress("DEPRECATION")
+                startActivityForResult(
+                    CreateSettingsActivity.createIntent(
+                        this@CreateTimeActivity,
+                        route.copy(hour = -1, minute = -1, dateEpochDay = DATE_EPOCH_DAY_UNSET),
+                    ),
                     REQUEST_CREATION_NEXT,
                 )
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)

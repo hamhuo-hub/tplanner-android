@@ -13,13 +13,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
-import java.time.ZoneId
 
 // ── shared constants ───────────────────────────────────────────────────
 
-const val TYPE_EVENT = "event"
-const val TYPE_STATUS = "status"
-const val TYPE_TASK = "task"
 const val TAG_VALUE = "task_creation_value"
 
 const val CREATION_PRIMARY = WEAR_PRIMARY
@@ -31,7 +27,9 @@ const val CREATION_CARD_PRESSED = WEAR_CONTROL_PRESSED
 val CREATION_REGULAR = WEAR_REGULAR
 val CREATION_MEDIUM = WEAR_MEDIUM
 val CREATION_HEADING_FONT = WEAR_SEMIBOLD
-val CREATION_ZONE = ZoneId.of(WatchTaskProtocol.DEFAULT_TIME_ZONE_ID)
+
+/** The watch has one display zone; the flow writes UTC instants for the chosen local time. */
+val CREATION_ZONE = APP_ZONE
 const val TASK_COLOR_COUNT = 8
 
 // ── shared View builders ───────────────────────────────────────────────
@@ -93,52 +91,6 @@ fun Context.creationActionRow(
     wearButtonStyle(primary)
     contentDescription = getString(textRes)
     setOnClickListener { action() }
-}
-
-fun Context.creationTypeButton(
-    titleRes: Int,
-    descriptionRes: Int,
-    action: () -> Unit,
-): LinearLayout {
-    val title = getString(titleRes)
-    val description = getString(descriptionRes)
-    return LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = wearDp(TPlannerLightTokens.Platform.Wear.Geometry.TaskRowMinHeight)
-        setPadding(
-        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
-        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
-        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingInline),
-        wearDp(TPlannerLightTokens.Platform.Wear.Geometry.RowPaddingBlock),
-    )
-        background = creationRippleRounded(
-            CREATION_CARD,
-            CREATION_CARD_PRESSED,
-            wearDp(TPlannerLightTokens.Semantic.Radius.Control).toFloat(),
-        )
-        isClickable = true
-        isFocusable = true
-        contentDescription = getString(R.string.task_create_type_accessibility, title, description)
-        setOnClickListener {
-            performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-            action()
-        }
-
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(creationRowText(title, TPlannerLightTokens.Platform.Wear.Typography.TaskTitle.FontSize, CREATION_PRIMARY, CREATION_MEDIUM))
-            addView(creationRowText(description, TPlannerLightTokens.Platform.Wear.Typography.Meta.FontSize, CREATION_DIM, CREATION_REGULAR))
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            topMargin = dp(5)
-        }
-    }
 }
 
 fun Context.creationSettingRow(

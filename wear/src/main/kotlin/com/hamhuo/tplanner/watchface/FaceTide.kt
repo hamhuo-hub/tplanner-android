@@ -94,8 +94,8 @@ class FaceTide(
         p.alpha = (255 * boot).toInt()
         canvas.drawPath(goldPath, p)
 
-        // ── 日程事件：蓝色半透明小点，映射到 24h 潮汐线上 ──────────────────
-        for (m in marks.minutes) {
+        // ── 日程事件：蓝色半透明小点，映射到 24h 潮汐线上（本机八日刻度表的今天） ──
+        for (m in marks.todayMinutes) {
             val frac = m / 1440f
             val ex   = g.startX + frac * g.width
             val ey   = g.baseY - g.amp * cos(frac * 2.0 * PI).toFloat()

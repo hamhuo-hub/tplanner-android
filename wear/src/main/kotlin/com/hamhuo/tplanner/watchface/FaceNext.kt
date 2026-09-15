@@ -204,12 +204,9 @@ class FaceNext(
         alpha: Float,
         ambient: Boolean,
     ) {
-        val today = nowTime.toLocalDate()
-        val dayStartMs = today.atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        val dayEndMs = today.plusDays(1).atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        val todayTasks = marks.items.filter { task ->
-            task.endEpochMs > dayStartMs && task.startEpochMs < dayEndMs
-        }
+        // The today window is computed here from canonical documents; the phone sends no table.
+        val window = watchDayWindow(nowTime.toLocalDate())
+        val todayTasks = marks.items.filter { task -> watchTaskFallsInWindow(task, window) }
         val visibleTasks = if (ambient) todayTasks.take(1) else todayTasks.take(MAX_VISIBLE_TASKS)
         if (visibleTasks.isEmpty()) {
             drawEmptyTaskArc(canvas, s, cx, cy, alpha, ambient)
@@ -346,9 +343,16 @@ class FaceNext(
     }
 
     private fun taskLabel(nowTime: ZonedDateTime, task: WatchEventMarks.NextTask): String {
-        val start = Instant.ofEpochMilli(task.startEpochMs).atZone(APP_ZONE)
-        val end = Instant.ofEpochMilli(task.endEpochMs).atZone(APP_ZONE)
+        val startEpochMs = task.startEpochMs ?: return localizedText(
+            R.string.watchface_task_label,
+            localizedText(R.string.task_list_no_time),
+            task.title,
+        )
+        val start = Instant.ofEpochMilli(startEpochMs).atZone(APP_ZONE)
+        val end = Instant.ofEpochMilli(task.endEpochMs ?: startEpochMs).atZone(APP_ZONE)
         val prefix = when {
+            // A date-only record keeps its date and never gains an invented time of day.
+            !task.timed -> shortDateStr(start)
             !nowTime.isBefore(start) && nowTime.isBefore(end) ->
                 localizedText(R.string.watchface_task_now)
             start.toLocalDate() == nowTime.toLocalDate() -> timeStr(start)

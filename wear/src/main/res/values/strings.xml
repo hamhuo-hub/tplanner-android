@@ -18,6 +18,8 @@
     <string name="watchface_task_date_time">%1$s %2$s</string>
     <string name="watchface_task_label">%1$s · %2$s</string>
 
+    <string name="task_list_no_time">No time</string>
+    <string name="task_list_no_date">No date</string>
     <string name="task_list_choose_action">%1$s, tap to choose a list</string>
     <string name="task_list_new">New</string>
     <string name="task_list_delete">Delete</string>

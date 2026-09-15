@@ -18,6 +18,8 @@
     <string name="watchface_task_date_time">%1$s %2$s</string>
     <string name="watchface_task_label">%1$s · %2$s</string>
 
+    <string name="task_list_no_time">無時間</string>
+    <string name="task_list_no_date">無日期</string>
     <string name="task_list_choose_action">%1$s，輕觸選擇清單</string>
     <string name="task_list_new">新增</string>
     <string name="task_list_delete">刪除</string>

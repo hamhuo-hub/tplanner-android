@@ -2,7 +2,6 @@ package com.hamhuo.tplanner
 
 import android.Manifest
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -22,14 +21,7 @@ class MainActivity : ComponentActivity() {
     private var selectedFilter = WatchListFilter.INBOX
     private var manualSyncInProgress = false
 
-    private val marksPreferences: SharedPreferences by lazy {
-        getSharedPreferences(WATCH_MARKS_PREFS, MODE_PRIVATE)
-    }
-    private val marksListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == WATCH_MARKS_KEY && ::dashboard.isInitialized) {
-            dashboard.post { dashboard.refreshContent(showFeedback = false) }
-        }
-    }
+    private var storeSubscription: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,10 +42,9 @@ class MainActivity : ComponentActivity() {
                 startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
             }
             setTaskDeleteAction { task ->
-                // The swipe animation removes the card before this callback. Rebuild in both
-                // branches: a committed pending delete keeps it hidden, while an enqueue failure
-                // immediately restores it from the authoritative projection.
-                val queued = WatchTaskOutbox.enqueueDelete(this@MainActivity, task.id)
+                // The swipe animation removes the card before this callback. Both branches rebuild:
+                // a committed tombstone keeps the row hidden, and a failed commit restores it.
+                val queued = WatchTaskOutbox.enqueueDelete(this@MainActivity, task.uid)
                 dashboard.refreshContent(showFeedback = false)
                 if (!queued) {
                     Toast.makeText(
@@ -71,8 +62,8 @@ class MainActivity : ComponentActivity() {
                     showPermissionRequired()
                     handlePermissionAction()
                 } else {
-                    BluetoothScheduleBridgeService.startIfAllowed(this@MainActivity)
                     clearPermissionRequired()
+                    WatchTaskOutbox.resumePending(this@MainActivity)
                 }
             }
         }
@@ -81,15 +72,19 @@ class MainActivity : ComponentActivity() {
         if (needsBluetoothPermission()) {
             dashboard.showPermissionRequired()
             if (!permissionRequestAttempted) requestBluetoothPermission()
-        } else {
-            BluetoothScheduleBridgeService.startIfAllowed(this)
         }
         WatchTaskOutbox.resumePending(this)
     }
 
     override fun onStart() {
         super.onStart()
-        marksPreferences.registerOnSharedPreferenceChangeListener(marksListener)
+        // The durable store is the only change notification; pending local documents are already
+        // part of its state, so no second ledger has to be watched.
+        storeSubscription = WatchV5Store.subscribe(this) {
+            if (::dashboard.isInitialized) {
+                dashboard.post { dashboard.refreshContent(showFeedback = false) }
+            }
+        }
     }
 
     override fun onResume() {
@@ -97,7 +92,6 @@ class MainActivity : ComponentActivity() {
         hideSystemUi()
         if (!needsBluetoothPermission()) {
             dashboard.clearPermissionRequired()
-            BluetoothScheduleBridgeService.startIfAllowed(this)
         } else {
             dashboard.showPermissionRequired()
         }
@@ -105,7 +99,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        marksPreferences.unregisterOnSharedPreferenceChangeListener(marksListener)
+        storeSubscription?.invoke()
+        storeSubscription = null
         super.onStop()
     }
 
@@ -160,7 +155,7 @@ class MainActivity : ComponentActivity() {
         val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         if (granted) {
             dashboard.clearPermissionRequired()
-            BluetoothScheduleBridgeService.startIfAllowed(this)
+            WatchTaskOutbox.resumePending(this)
             dashboard.refreshContent(showFeedback = true)
         } else {
             dashboard.showPermissionRequired()
@@ -169,7 +164,7 @@ class MainActivity : ComponentActivity() {
 
     private fun needsBluetoothPermission(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            !BluetoothScheduleBridgeService.hasBluetoothConnectPermission(this)
+            !WatchV5Link.hasBluetoothPermission(this)
 
     private fun startManualSync() {
         if (manualSyncInProgress) return

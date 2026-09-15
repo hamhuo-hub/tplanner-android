@@ -56,30 +56,32 @@ class TaskDetailActivity : WearPageActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val title = intent.getStringExtra(EXTRA_TITLE)
-        val startEpochMs = intent.getLongExtra(EXTRA_START, Long.MIN_VALUE)
-        val endEpochMs = intent.getLongExtra(EXTRA_END, Long.MIN_VALUE)
-        val checklistJson = intent.getStringExtra(EXTRA_CHECKLIST).orEmpty()
-        if (title.isNullOrBlank() || startEpochMs == Long.MIN_VALUE || endEpochMs < startEpochMs) {
+        // Details are re-read from canonical documents instead of a serialized copy of the list row.
+        val uid = intent.getStringExtra(EXTRA_UID)
+        val occurrence = intent.getLongExtra(EXTRA_OCCURRENCE, OCCURRENCE_UNSET)
+            .takeIf { it != OCCURRENCE_UNSET }
+        val task = uid?.let { id ->
+            WatchEventMarks.load(this).items.firstOrNull {
+                it.uid == id && it.occurrenceEpochMs == occurrence
+            }
+        }
+        if (task == null) {
             finish()
             return
         }
-        page = TaskDetailView(this, title, startEpochMs, endEpochMs, checklistJson)
+        page = TaskDetailView(this, task)
         setContentView(page)
     }
 
     companion object {
-        private const val EXTRA_TITLE = "task_title"
-        private const val EXTRA_START = "task_start"
-        private const val EXTRA_END = "task_end"
-        private const val EXTRA_CHECKLIST = "task_checklist"
+        private const val EXTRA_UID = "task_uid"
+        private const val EXTRA_OCCURRENCE = "task_occurrence"
+        private const val OCCURRENCE_UNSET = Long.MIN_VALUE
 
         fun createIntent(context: Context, task: WatchEventMarks.NextTask): Intent =
             Intent(context, TaskDetailActivity::class.java)
-                .putExtra(EXTRA_TITLE, task.title)
-                .putExtra(EXTRA_START, task.startEpochMs)
-                .putExtra(EXTRA_END, task.endEpochMs)
-                .putExtra(EXTRA_CHECKLIST, task.checklistJson)
+                .putExtra(EXTRA_UID, task.uid)
+                .putExtra(EXTRA_OCCURRENCE, task.occurrenceEpochMs ?: OCCURRENCE_UNSET)
     }
 }
 
@@ -194,10 +196,7 @@ private class ListSelectionView(
 
 private class TaskDetailView(
     context: Context,
-    title: String,
-    startEpochMs: Long,
-    endEpochMs: Long,
-    checklistJson: String,
+    task: WatchEventMarks.NextTask,
 ) : FrameLayout(context) {
     private val timeFormatter = LocalizedDateTimeFormatter(context, R.string.task_time_pattern)
     private val dateFormatter =
@@ -235,22 +234,29 @@ private class TaskDetailView(
             },
         )
 
-        val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(startEpochMs), APP_ZONE)
-        val end = ZonedDateTime.ofInstant(Instant.ofEpochMilli(endEpochMs), APP_ZONE)
-        val date = if (start.toLocalDate() == end.toLocalDate()) {
-            dateFormatter.format(start)
-        } else {
-            context.getString(
+        val title = task.title
+        val startEpochMs = task.startEpochMs
+        val start = startEpochMs?.let { ZonedDateTime.ofInstant(Instant.ofEpochMilli(it), APP_ZONE) }
+        val end = task.endEpochMs?.let { ZonedDateTime.ofInstant(Instant.ofEpochMilli(it), APP_ZONE) }
+        val date = when {
+            start == null -> context.getString(R.string.task_list_no_date)
+            end != null && start.toLocalDate() != end.toLocalDate() -> context.getString(
                 R.string.task_list_date_range,
                 dateFormatter.format(start),
                 dateFormatter.format(end),
             )
+
+            else -> dateFormatter.format(start)
         }
-        val time = context.getString(
-            R.string.task_list_time_range,
-            timeFormatter.format(start),
-            timeFormatter.format(end),
-        )
+        val time = when {
+            start == null || !task.timed -> context.getString(R.string.task_list_no_time)
+            end == null || end.toLocalDateTime() == start.toLocalDateTime() -> timeFormatter.format(start)
+            else -> context.getString(
+                R.string.task_list_time_range,
+                timeFormatter.format(start),
+                timeFormatter.format(end),
+            )
+        }
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             minimumHeight = dp(118)
@@ -280,8 +286,7 @@ private class TaskDetailView(
             ),
         )
 
-        val checklist = parseChecklist(checklistJson)
-        android.util.Log.d("TaskDetail", "checklist json length=${checklistJson.length}, items=${checklist.size}")
+        val checklist = task.checklist
         if (checklist.isNotEmpty()) {
             val checklistPanel = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -312,24 +317,6 @@ private class TaskDetailView(
         }
 
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-    }
-
-    private data class ChecklistItemData(val text: String, val completed: Boolean)
-
-    private fun parseChecklist(json: String): List<ChecklistItemData> {
-        if (json.isBlank()) return emptyList()
-        return try {
-            val arr = org.json.JSONArray(json)
-            (0 until arr.length()).mapNotNull { i ->
-                val obj = arr.optJSONObject(i) ?: return@mapNotNull null
-                ChecklistItemData(
-                    text = obj.optString("text", ""),
-                    completed = obj.optBoolean("completed", false),
-                )
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
     }
 
     private fun checklistItemView(text: String, completed: Boolean): TextView =

@@ -35,7 +35,7 @@ abstract class FaceBase(
     @Volatile protected var now        = 0L
     @Volatile protected var bootAlpha  = 0f
 
-    // ── 事件刻度 ────────────────────────────────────────────────────────────
+    // ── 本地显示状态（由本机从 canonical jCal 计算） ─────────────────────────
     @Volatile protected var marks = WatchEventMarks.EMPTY
     @Volatile private var marksLoadedAt = 0L
 
@@ -51,8 +51,8 @@ abstract class FaceBase(
     /** Only faces with an explicit app-entry region opt into tap-to-open behavior. */
     open fun isOnAppLaunchRegion(x: Int, y: Int): Boolean = false
 
-    /** Install the same committed projection observed by the Wear app and repaint immediately. */
-    internal fun onProjectionInstalled() {
+    /** Recompute the local display state from canonical documents and repaint immediately. */
+    internal fun onDocumentsChanged() {
         marks = WatchEventMarks.load(context)
         marksLoadedAt = System.currentTimeMillis()
         invalidate()
@@ -69,7 +69,7 @@ abstract class FaceBase(
         if (!ambient && bootStart == 0L) bootStart = now
         bootAlpha  = easeOutCubic(((now - bootStart).coerceIn(0, BOOT_MS) / BOOT_MS.toFloat()))
 
-        // SharedPreferences commits invalidate immediately. This slow read is only a defensive
+        // Durable store commits invalidate immediately. This slow read is only a defensive
         // fallback for process/platform edge cases, not the normal synchronization mechanism.
         if (marksLoadedAt == 0L || now < marksLoadedAt || now - marksLoadedAt >= MARKS_REFRESH_MS) {
             marksLoadedAt = now

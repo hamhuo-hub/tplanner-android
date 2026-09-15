@@ -28,9 +28,7 @@ class CreateDateActivity : WearPageActivity() {
         super.onCreate(savedInstanceState)
         title = getString(R.string.task_create_date)
 
-        val route = intent.creationRouteOrNull()?.takeIf {
-            !it.type.isNullOrBlank() && it.hour in 0..23 && it.minute in 0..59
-        } ?: run {
+        val route = intent.creationRouteOrNull()?.takeIf { it.hasTime } ?: run {
             finish()
             return
         }

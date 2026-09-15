@@ -25,10 +25,7 @@ class CreateSettingsActivity : WearPageActivity() {
         title = getString(R.string.task_create_settings_page)
 
         route = intent.creationRouteOrNull()?.takeIf {
-            !it.type.isNullOrBlank() &&
-                it.hour in 0..23 &&
-                it.minute in 0..59 &&
-                it.dateEpochDay != DATE_EPOCH_DAY_UNSET
+            it.title.isNotBlank() && (!it.hasTime || it.dateEpochDay != DATE_EPOCH_DAY_UNSET)
         } ?: run {
             finish()
             return
@@ -94,18 +91,20 @@ class CreateSettingsActivity : WearPageActivity() {
         saveButton.isEnabled = false
         saveButton.text = getString(R.string.task_create_saving)
 
-        val start = LocalDate.ofEpochDay(route.dateEpochDay)
-            .atTime(route.hour, route.minute)
-            .atZone(CREATION_ZONE)
+        val start = if (route.hasTime && route.dateEpochDay != DATE_EPOCH_DAY_UNSET) {
+            LocalDate.ofEpochDay(route.dateEpochDay)
+                .atTime(route.hour, route.minute)
+                .atZone(CREATION_ZONE)
+        } else {
+            null
+        }
 
         val draft = WatchTaskDraft(
             id = route.id,
             title = route.title,
-            type = route.type.orEmpty(),
-            startEpochMs = start.toInstant().toEpochMilli(),
-            endEpochMs = start.plusHours(DEFAULT_DURATION_HOURS).toInstant().toEpochMilli(),
+            startEpochMs = start?.toInstant()?.toEpochMilli(),
+            endEpochMs = start?.plusHours(DEFAULT_DURATION_HOURS)?.toInstant()?.toEpochMilli(),
             colorId = colorId,
-            updatedAtEpochMs = route.updatedAtEpochMs,
         )
 
         val queued = WatchTaskOutbox.enqueue(this, draft)

@@ -2,14 +2,8 @@
 <resources>
     <string name="task_create_title_page">Create item</string>
     <string name="task_create_title_required">Enter a title first</string>
-    <string name="task_create_type_page">Choose type</string>
-    <string name="task_create_type_event">Event</string>
-    <string name="task_create_type_event_description">Schedule an event at the selected time</string>
-    <string name="task_create_type_status">Status</string>
-    <string name="task_create_type_status_description">Record your current status</string>
-    <string name="task_create_type_task">Task</string>
-    <string name="task_create_type_task_description">Create a task you can complete</string>
     <string name="task_create_time_page">Set time</string>
+    <string name="task_create_no_time">No time</string>
     <string name="task_create_settings_page">Item settings</string>
     <string name="task_create_date">Date</string>
     <string name="task_create_date_today">Today</string>
@@ -21,7 +15,6 @@
     <string name="task_create_saving">Saving</string>
     <string name="task_create_queued">Saved and ready to synchronize with your phone</string>
     <string name="task_create_failed">Could not save. Try again.</string>
-    <string name="task_create_type_accessibility">%1$s, %2$s</string>
     <string name="task_create_setting_accessibility">%1$s, currently %2$s</string>
     <string-array name="task_create_color_names">
         <item>Ocean blue</item>

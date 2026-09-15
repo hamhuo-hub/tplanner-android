@@ -56,12 +56,6 @@
             android:theme="@style/Theme.TPlanner.Wear.Light" />
 
         <activity
-            android:name=".CreateTypeActivity"
-            android:exported="false"
-            android:taskAffinity="com.hamhuo.tplanner.watch"
-            android:theme="@style/Theme.TPlanner.Wear.Light" />
-
-        <activity
             android:name=".CreateTimeActivity"
             android:exported="false"
             android:taskAffinity="com.hamhuo.tplanner.watch"
@@ -117,30 +111,15 @@
             <meta-data android:name="androidx.wear.watchface.MULTIPLE_INSTANCES_ALLOWED" android:value="false" />
         </service>
 
-        <!-- 接收手机推送的日程时间与标题，写入 WatchEventMarks -->
-        <service android:name=".ScheduleReceiverService" android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/schedule" />
-            </intent-filter>
-        </service>
-
-        <service android:name=".WatchTaskAckReceiverService" android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/tplanner/task/ack/" />
-            </intent-filter>
-        </service>
-
         <service
             android:name=".WatchTaskOutboxJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
-        <!-- 经典蓝牙 RFCOMM 降级通道：接收手机端的日程推送。
-             开机/更新后启动前台服务；服务内部随蓝牙状态启停 socket。 -->
+        <!-- V5 同步是手表主动发起的请求/响应：Data Layer 或 RFCOMM 承载同一份 canonical JSON。
+             开机/更新/蓝牙开启后恢复尚未确认的本地命令。 -->
         <receiver
-            android:name=".BluetoothScheduleBridgeReceiver"
+            android:name=".WatchSyncBootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -149,12 +128,6 @@
                 <action android:name="android.bluetooth.adapter.action.STATE_CHANGED" />
             </intent-filter>
         </receiver>
-
-        <service
-            android:name=".BluetoothScheduleBridgeService"
-            android:exported="false"
-            android:foregroundServiceType="connectedDevice"
-            android:stopWithTask="false" />
 
     </application>
 

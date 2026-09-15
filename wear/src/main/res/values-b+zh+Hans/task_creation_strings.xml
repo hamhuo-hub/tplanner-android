@@ -2,14 +2,8 @@
 <resources>
     <string name="task_create_title_page">新建事项</string>
     <string name="task_create_title_required">请先输入标题</string>
-    <string name="task_create_type_page">选择类型</string>
-    <string name="task_create_type_event">事件</string>
-    <string name="task_create_type_event_description">在指定时间安排事件</string>
-    <string name="task_create_type_status">状态</string>
-    <string name="task_create_type_status_description">记录当前状态</string>
-    <string name="task_create_type_task">任务</string>
-    <string name="task_create_type_task_description">创建可完成的任务</string>
     <string name="task_create_time_page">设置时间</string>
+    <string name="task_create_no_time">不设时间</string>
     <string name="task_create_settings_page">事项设置</string>
     <string name="task_create_date">日期</string>
     <string name="task_create_date_today">今天</string>
@@ -21,7 +15,6 @@
     <string name="task_create_saving">正在保存</string>
     <string name="task_create_queued">已保存，将同步到手机</string>
     <string name="task_create_failed">保存失败，请重试</string>
-    <string name="task_create_type_accessibility">%1$s，%2$s</string>
     <string name="task_create_setting_accessibility">%1$s，当前为%2$s</string>
     <string-array name="task_create_color_names">
         <item>海蓝</item>

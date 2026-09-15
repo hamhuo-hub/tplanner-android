@@ -2,7 +2,6 @@ package com.hamhuo.tplanner
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -31,10 +30,7 @@ import androidx.wear.watchface.style.CurrentUserStyleRepository
 
 abstract class TPlannerFaceService : WatchFaceService() {
     @Volatile private var activeRenderer: FaceBase? = null
-    private var marksPreferences: SharedPreferences? = null
-    private val marksListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == WATCH_MARKS_KEY) activeRenderer?.onProjectionInstalled()
-    }
+    private var storeSubscription: (() -> Unit)? = null
     private val vibrator: Vibrator by lazy { getSystemService(Vibrator::class.java) }
     private val openDashboardIntent: PendingIntent by lazy {
         PendingIntent.getActivity(
@@ -63,12 +59,14 @@ abstract class TPlannerFaceService : WatchFaceService() {
         complicationSlotsManager: ComplicationSlotsManager,
         currentUserStyleRepository: CurrentUserStyleRepository,
     ): WatchFace {
-        BluetoothScheduleBridgeService.startIfAllowed(applicationContext)
+        // A watch face can be the only entry point into the app, so queued commands are resumed
+        // here and the face repaints from the one durable V5 store.
+        WatchTaskOutbox.resumePending(applicationContext)
         val renderer = createRenderer(surfaceHolder, watchState, currentUserStyleRepository)
         activeRenderer = renderer
-        marksPreferences = getSharedPreferences(WATCH_MARKS_PREFS, MODE_PRIVATE).also { prefs ->
-            prefs.unregisterOnSharedPreferenceChangeListener(marksListener)
-            prefs.registerOnSharedPreferenceChangeListener(marksListener)
+        storeSubscription?.invoke()
+        storeSubscription = WatchV5Store.subscribe(applicationContext) {
+            activeRenderer?.onDocumentsChanged()
         }
         return WatchFace(WatchFaceType.DIGITAL, renderer)
             .setTapListener(object : WatchFace.TapListener {
@@ -93,8 +91,8 @@ abstract class TPlannerFaceService : WatchFaceService() {
     }
 
     override fun onDestroy() {
-        marksPreferences?.unregisterOnSharedPreferenceChangeListener(marksListener)
-        marksPreferences = null
+        storeSubscription?.invoke()
+        storeSubscription = null
         activeRenderer = null
         super.onDestroy()
     }

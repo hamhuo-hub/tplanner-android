@@ -7,7 +7,7 @@ import androidx.wear.watchface.WatchState
 import androidx.wear.watchface.style.CurrentUserStyleRepository
 import java.time.ZonedDateTime
 
-/** Hop's only data source is the same committed schedule projection used by the Wear app. */
+/** Hop reads the same canonical documents as the Wear app and computes its own timeline. */
 class FaceHop(
     private val context: Context,
     surfaceHolder: SurfaceHolder,
@@ -31,7 +31,9 @@ class FaceHop(
         val dm = context.resources.displayMetrics
         painter.draw(
             canvas, HopFaceMetrics(faceW.toFloat(), faceH.toFloat(), dm.density, dm.scaledDensity),
-            t, marks.items.map { HopTaskInterval(it.id, it.title, it.startEpochMs, it.endEpochMs) },
+            t, marks.items.filter { it.scheduled }.map {
+                HopTaskInterval(it.uid, it.title, it.startEpochMs!!, it.endEpochMs ?: it.startEpochMs)
+            },
             ambient = ambient, burnInProtection = burnInProtection, lowBitAmbient = lowBitAmbient,
         )
     }

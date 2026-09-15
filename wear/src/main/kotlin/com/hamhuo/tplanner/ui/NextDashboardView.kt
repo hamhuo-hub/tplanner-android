@@ -40,7 +40,6 @@ import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitVariant
 import com.hamhuo.tplanner.designsystem.TPlannerTaskUnitView
 import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackTone
 import com.hamhuo.tplanner.designsystem.TPlannerSyncFeedbackView
-import org.json.JSONArray
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZonedDateTime
@@ -661,13 +660,15 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun taskCard(task: WatchEventMarks.NextTask): View {
-        val (checklistDone, checklistTotal) = checklistProgress(task.checklistJson)
+        val checklistDone = task.checklist.count { it.completed }
+        val checklistTotal = task.checklist.size
         return TPlannerTaskUnitView(context).apply {
             render(
                 model = TPlannerTaskUnitModel(
                     title = task.title,
                     supportingText = taskSubtitle(task),
-                    isTask = task.type == "task",
+                    isTask = task.isTask,
+                    completed = task.completed,
                     checklistDone = checklistDone,
                     checklistTotal = checklistTotal,
                     accessibilityLabel = context.getString(
@@ -684,15 +685,6 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             )
         }
     }
-
-    private fun checklistProgress(raw: String): Pair<Int, Int> = runCatching {
-        val array = JSONArray(raw)
-        var done = 0
-        for (index in 0 until array.length()) {
-            if (array.optJSONObject(index)?.optBoolean("completed") == true) done += 1
-        }
-        done to array.length()
-    }.getOrDefault(0 to 0)
 
     private fun stateCard(
         title: String,
@@ -742,47 +734,51 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     }
 
     private fun filteredTasks(filter: WatchListFilter): List<WatchEventMarks.NextTask> {
-        // Re-read the durable outbox even if another callback changed it between snapshot reloads.
-        // No independent tombstone may outlive a failed delete enqueue.
-        val deletedIds = WatchTaskOutbox.pendingDeleteTaskIds(context)
-        val available = if (deletedIds.isEmpty()) {
-            marks.items
-        } else {
-            marks.items.filterNot { it.id in deletedIds }
-        }
-        if (filter == WatchListFilter.INBOX) return collapseWatchTaskSeries(available)
-        val today = LocalDate.now(APP_ZONE)
-        val start = today.atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        val end = today.plusDays(1).atStartOfDay(APP_ZONE).toInstant().toEpochMilli()
-        return collapseWatchTaskSeries(available.filter { task ->
-            watchTaskFallsInWindow(task, start, end)
-        })
+        // Pending local documents are already overlaid by the durable V5 store, so the list reads
+        // canonical records only and decides its window and fold here, on the watch.
+        val available = if (filter == WatchListFilter.INBOX) marks.items else watchTodayList(marks.items)
+        return collapseWatchTaskSeries(available)
     }
 
     private fun taskSubtitle(task: WatchEventMarks.NextTask): String {
-        val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(task.startEpochMs), APP_ZONE)
-        val end = ZonedDateTime.ofInstant(Instant.ofEpochMilli(task.endEpochMs), APP_ZONE)
-        val today = LocalDate.now(APP_ZONE)
-        val day = when (start.toLocalDate()) {
-            today -> context.getString(R.string.task_list_filter_today)
-            today.plusDays(1) -> context.getString(R.string.task_list_tomorrow)
-            else -> shortDateFormatter.format(start)
+        val startEpochMs = task.startEpochMs ?: return context.getString(R.string.task_list_no_time)
+        val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(startEpochMs), APP_ZONE)
+        val endEpochMs = task.endEpochMs
+        // Date-only records keep their date and have no time of day to show.
+        if (!task.timed) return shortDateFormatter.format(start)
+        if (endEpochMs == null || endEpochMs == startEpochMs) {
+            return context.getString(
+                R.string.task_list_same_day_subtitle,
+                dayLabel(start),
+                timeFormatter.format(start),
+                timeFormatter.format(start),
+            )
         }
+        val end = ZonedDateTime.ofInstant(Instant.ofEpochMilli(endEpochMs), APP_ZONE)
         return if (start.toLocalDate() == end.toLocalDate()) {
             context.getString(
                 R.string.task_list_same_day_subtitle,
-                day,
+                dayLabel(start),
                 timeFormatter.format(start),
                 timeFormatter.format(end),
             )
         } else {
             context.getString(
                 R.string.task_list_cross_day_subtitle,
-                day,
+                dayLabel(start),
                 timeFormatter.format(start),
                 shortDateFormatter.format(end),
                 timeFormatter.format(end),
             )
+        }
+    }
+
+    private fun dayLabel(start: ZonedDateTime): String {
+        val today = LocalDate.now(APP_ZONE)
+        return when (start.toLocalDate()) {
+            today -> context.getString(R.string.task_list_filter_today)
+            today.plusDays(1) -> context.getString(R.string.task_list_tomorrow)
+            else -> shortDateFormatter.format(start)
         }
     }
 
