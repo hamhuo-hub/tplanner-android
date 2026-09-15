@@ -57,8 +57,6 @@ class SyncV3Engine(
         snapshotVersion: Long,
         brokerToSequence: Long,
     ) -> Boolean = { _, _, _, _ -> false },
-    /** Android canary 开关(§9.3):capability + cursor 齐备才走 delta;默认关,生产由 SyncV3Runtime 打开。 */
-    private val deltaEnabled: Boolean = false,
     private val capabilitiesCache: CapabilitiesCache = CapabilitiesCache(),
 ) {
     private val appContext = context.applicationContext
@@ -424,7 +422,7 @@ class SyncV3Engine(
     }
 
     /**
-     * 下行统一入口(§9.3):canary 开关 + capability 都允许且本地已有 cursor 时走
+     * 下行统一入口(§9.3):服务器 capability 允许且本地已有 cursor 时走
      * delta;任何断链/410/未知 type 都 fail closed 到完整快照逃生舱。快照安装
      * 会用 manifest.cursor 重建 delta 起点,两条路径互不冲突。
      */
@@ -434,11 +432,9 @@ class SyncV3Engine(
         base: String,
     ) {
         val meta = store.getSyncState()
-        val deltaEligible = deltaEnabled &&
-            capabilities.optJSONArray("downlinkModes")?.let { modes ->
-                (0 until modes.length()).any { modes.optString(it) == "delta-v1" }
-            } == true &&
-            !meta?.cursor.isNullOrEmpty()
+        val deltaEligible = capabilities.optJSONArray("downlinkModes")?.let { modes ->
+            (0 until modes.length()).any { modes.optString(it) == "delta-v1" }
+        } == true && !meta?.cursor.isNullOrEmpty()
         SyncLog.info(
             source = "downlink",
             message = if (deltaEligible) "delta" else "snapshot",
