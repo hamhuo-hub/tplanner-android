@@ -3,7 +3,6 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
 }
 
 // Load API keys from local.properties (never committed to VCS)
@@ -48,11 +47,6 @@ android {
         versionName = rootProject.extra["appVersionName"] as String
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
-        buildConfigField(
-            "String",
-            "AMAP_API_KEY",
-            "\"${localProperties.getProperty("amap.api.key", "")}\"",
-        )
     }
 
     buildTypes {
@@ -111,13 +105,5 @@ dependencies {
     // Wearable Data Layer — 手表 ↔ 手机通过 GMS 通信（国际版 Wear OS 设备）。
     // 国行三星无 GMS 时走经典蓝牙 RFCOMM fallback。
     implementation(libs.play.services.wearable)
-    implementation(libs.androidx.room.runtime)
-    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime)
-    implementation(libs.androidx.datastore.preferences)
-}
-
-ksp {
-    arg("room.schemaLocation", file("schemas").absolutePath)
-    arg("room.generateKotlin", "true")
 }

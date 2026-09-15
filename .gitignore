@@ -96,3 +96,6 @@ package-lock.json
 !sync-server/package-lock.json
 /sync-server
 tplanner-deploy.tar.gz
+
+# Parallel product branch checkouts
+.v5-worktrees/
