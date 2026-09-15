@@ -14,7 +14,8 @@ val hasProjectKeystore = keystoreProperties.containsKey("storeFile")
 
 android {
     namespace = "com.hamhuo.tplanner"
-    compileSdk = 35
+    // Align with the shared AndroidX/Compose dependency graph.
+    compileSdk = 37
 
     signingConfigs {
         if (hasProjectKeystore) {
@@ -73,7 +74,7 @@ android {
 dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)

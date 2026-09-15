@@ -2,7 +2,6 @@ package com.hamhuo.tplanner.syncv3
 
 import org.json.JSONObject
 import java.net.URLEncoder
-import java.security.MessageDigest
 
 /**
  * delta-v1 下行安装器(见 docs/sync-v3.md §9.3/§9.4),与桌面 src/syncV3/deltaInstaller.js 同语义:
@@ -58,11 +57,10 @@ class SyncV4DeltaInstaller(
     ) -> Unit)? = null,
 ) {
     fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        SnapshotDeltaCore.sha256Hex(bytes)
 
     fun canonicalStateHash(state: JSONObject): String {
-        val canonical = Jcs.canonicalize(state)
-        return "sha256:${sha256Hex(canonical.toByteArray(Charsets.UTF_8))}"
+        return SnapshotDeltaCore.canonicalStateHash(state)
     }
 
     /** 严格 wire 校验:任何偏差都直接 DeltaFallbackException,不尝试修补。 */
@@ -123,13 +121,15 @@ class SyncV4DeltaInstaller(
 
     /** 纯函数:把 authoritative changes 装到 mirror 副本上;未知 type fail closed。 */
     fun applyToMirror(mirror: JSONObject, changes: List<DeltaChange>): JSONObject {
-        val next = JSONObject(mirror.toString())
-        for (change in changes) {
-            val mapKey = MAP_KEY_BY_CHANGE_TYPE[change.type]
-                ?: throw DeltaFallbackException("UNKNOWN_DELTA_TYPE:${change.type}")
-            next.getJSONObject(mapKey).put(change.entityId, change.value)
+        return try {
+            SnapshotDeltaCore.applyToMirror(
+                mirror,
+                changes.map { SnapshotDeltaCore.Change(it.type, it.entityId, it.value) },
+                MAP_KEY_BY_CHANGE_TYPE,
+            )
+        } catch (error: IllegalArgumentException) {
+            throw DeltaFallbackException(error.message ?: "DELTA_SCHEMA_UNSUPPORTED")
         }
-        return next
     }
 
     /**
@@ -149,11 +149,10 @@ class SyncV4DeltaInstaller(
         val applicable = mutableListOf<DeltaCommit>()
         for (commit in page.commits) {
             if (commit.snapshotVersion <= meta.installedSnapshotVersion) continue
-            if (commit.parentVersion != expectedParent) {
-                throw DeltaFallbackException(
-                    "DELTA_VERSION_GAP: commit ${commit.snapshotVersion} " +
-                        "parent ${commit.parentVersion}, expected $expectedParent",
-                )
+            try {
+                SnapshotDeltaCore.requireParent(expectedParent, commit.parentVersion)
+            } catch (error: IllegalArgumentException) {
+                throw DeltaFallbackException(error.message ?: "DELTA_VERSION_GAP")
             }
             applicable.add(commit)
             expectedParent = commit.snapshotVersion
@@ -167,8 +166,9 @@ class SyncV4DeltaInstaller(
         var mirror = JSONObject(meta.serverMirrorJson ?: throw DeltaFallbackException("NO_SERVER_MIRROR"))
         for (commit in applicable) {
             mirror = applyToMirror(mirror, commit.changes)
-            val hash = canonicalStateHash(mirror)
-            if (hash != commit.stateHashAfter) {
+            try {
+                SnapshotDeltaCore.verifyHash(mirror, commit.stateHashAfter)
+            } catch (_: IllegalArgumentException) {
                 throw DeltaFallbackException("DELTA_HASH_MISMATCH:${commit.snapshotVersion}")
             }
         }

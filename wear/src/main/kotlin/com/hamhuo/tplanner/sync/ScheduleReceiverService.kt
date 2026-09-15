@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataEvent
@@ -62,10 +63,7 @@ class ScheduleReceiverService : WearableListenerService() {
     }
 
     private fun clearSchedule() {
-        val committed = getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove(WATCH_MARKS_KEY)
-            .commit()
+        val committed = ScheduleStore.clear(this)
         Log.d(TAG, "clearSchedule: committed=$committed")
     }
 
@@ -91,6 +89,8 @@ internal object ScheduleStore {
     private const val MAX_TASK_ID_UTF8_BYTES = 256
     private const val MAX_TASKS_UTF8_BYTES = 64 * 1024
     private const val SOURCE_PHONE = "phone"
+    private const val KEY_DELTA_BASELINE = "schedule_delta_baseline_v1"
+    private const val KEY_DELTA_PROJECTION = "schedule_delta_projection_v1"
     internal const val SOURCE_BLUETOOTH = "bluetooth"
 
     /**
@@ -139,6 +139,7 @@ internal object ScheduleStore {
      * recovery source of truth when the process died after committing WATCH_MARKS_KEY but before
      * notifying the command outbox.
      */
+    @Synchronized
     internal fun installedSourceSnapshotVersion(context: Context): Long {
         val raw = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
             .getString(WATCH_MARKS_KEY, null) ?: return 0L
@@ -150,6 +151,28 @@ internal object ScheduleStore {
             Log.e(TAG, "Unable to recover installed projection watermark", error)
             0L
         }
+    }
+
+    /** A baseline is advertised only when it belongs to the installed renderer projection. */
+    @Synchronized
+    internal fun deltaBaseline(context: Context): WatchProjectionDeltaProtocol.Baseline? {
+        val prefs = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
+        return committedBaseline(prefs)?.let { raw ->
+            runCatching { WatchProjectionDeltaProtocol.baseline(raw) }.getOrNull()
+        }
+    }
+
+    @Synchronized
+    internal fun clear(context: Context): Boolean = commitProjection(
+        context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE),
+        projection = null,
+        baseline = null,
+    )
+
+    private fun committedBaseline(prefs: SharedPreferences): String? {
+        val projection = prefs.getString(WATCH_MARKS_KEY, null) ?: return null
+        if (projection != prefs.getString(KEY_DELTA_PROJECTION, null)) return null
+        return prefs.getString(KEY_DELTA_BASELINE, null)
     }
 
     @Synchronized
@@ -166,8 +189,10 @@ internal object ScheduleStore {
             return StoreResult.REJECTED
         }
         try {
-            val payload = JSONObject(raw)
             val prefs = context.getSharedPreferences(WATCH_MARKS_PREFS, Context.MODE_PRIVATE)
+            // Reconstruct on a separate JSON value. Invalid deltas never mutate either copy.
+            val fullSnapshot = WatchProjectionDeltaProtocol.apply(committedBaseline(prefs), raw)
+            val payload = JSONObject(fullSnapshot)
             val existing = prefs.getString(WATCH_MARKS_KEY, null)
                 ?.let { value -> runCatching { JSONObject(value) }.getOrNull() }
             val existingVersion = existing?.optLong("version", -1L) ?: -1L
@@ -236,14 +261,20 @@ internal object ScheduleStore {
                     )
                     return StoreResult.REJECTED
                 }
+                if (sourceSnapshotVersion < existingSourceSnapshotVersion) {
+                    return StoreResult.STALE
+                }
                 when {
                     existingTasksHash == taskContentHash -> when {
                         existingSeriesHash == taskSeriesHash -> {
-                            WatchTaskOutbox.onProjectionInstalled(
-                                context,
-                                maxOf(existingSourceSnapshotVersion, sourceSnapshotVersion),
-                            )
-                            return StoreResult.ALREADY_CURRENT
+                            if (sourceSnapshotVersion == existingSourceSnapshotVersion &&
+                                committedBaseline(prefs) == fullSnapshot
+                            ) {
+                                WatchTaskOutbox.onProjectionInstalled(context, existingSourceSnapshotVersion)
+                                return StoreResult.ALREADY_CURRENT
+                            }
+                            // New provenance or a missing baseline must be committed even when
+                            // rendered content is identical. Uncommitted input cannot finish commands.
                         }
                         existingSeriesHash == null && taskSeriesHash != null -> {
                             Log.i(TAG, "storeSchedule: enriching version=$version with series metadata")
@@ -298,12 +329,10 @@ internal object ScheduleStore {
                     if (taskSeriesHash != null) put(WatchTaskSeriesCodec.HASH_FIELD, taskSeriesHash)
                 }
             }
-            val committed = prefs.edit()
-                .putString(WATCH_MARKS_KEY, normalizedPayload.toString())
-                .commit()
+            val committed = commitProjection(prefs, normalizedPayload.toString(), fullSnapshot)
             if (committed) {
-                // The whole projection is one SharedPreferences value. Only after commit may a
-                // SNAPSHOT_PUBLISHED receipt terminate matching watch outbox entries.
+                // Projection and authoritative baseline share one durable commit. Only then may
+                // a SNAPSHOT_PUBLISHED receipt terminate matching watch outbox entries.
                 WatchTaskOutbox.onProjectionInstalled(context, sourceSnapshotVersion)
                 Log.d(
                     TAG,
@@ -319,6 +348,37 @@ internal object ScheduleStore {
             Log.e(TAG, "storeSchedule: invalid payload", e)
             return StoreResult.REJECTED
         }
+    }
+
+    private fun commitProjection(
+        prefs: SharedPreferences,
+        projection: String?,
+        baseline: String?,
+    ): Boolean {
+        val previousProjection = prefs.getString(WATCH_MARKS_KEY, null)
+        val previousBaseline = prefs.getString(KEY_DELTA_BASELINE, null)
+        val previousGuard = prefs.getString(KEY_DELTA_PROJECTION, null)
+        val committed = runCatching {
+            prefs.edit()
+                .putString(WATCH_MARKS_KEY, projection)
+                .putString(KEY_DELTA_BASELINE, baseline)
+                .putString(KEY_DELTA_PROJECTION, projection)
+                .commit()
+        }.onFailure { error -> Log.e(TAG, "Unable to commit projection", error) }
+            .getOrDefault(false)
+        if (!committed) {
+            // SharedPreferences updates its in-memory map before commit returns. Restore the
+            // prior values while holding the store lock so a failed write cannot advertise a
+            // new baseline or advance the recovered outbox watermark.
+            runCatching {
+                prefs.edit()
+                    .putString(WATCH_MARKS_KEY, previousProjection)
+                    .putString(KEY_DELTA_BASELINE, previousBaseline)
+                    .putString(KEY_DELTA_PROJECTION, previousGuard)
+                    .commit()
+            }.onFailure { error -> Log.e(TAG, "Unable to restore projection after failed commit", error) }
+        }
+        return committed
     }
 
     private fun normalizedMinutes(input: JSONArray?, fieldName: String): List<Int> {

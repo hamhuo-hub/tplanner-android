@@ -21,6 +21,8 @@ object WatchScheduleRefreshProtocol {
     data class Request(
         val requestId: String,
         val requestedAtEpochMs: Long,
+        val baseline: WatchProjectionDeltaProtocol.Baseline? = null,
+        val deltaVersion: Int? = null,
     )
 
     data class Response(
@@ -65,6 +67,11 @@ object WatchScheduleRefreshProtocol {
             put("operation", OPERATION_REQUEST)
             put("requestId", requestId)
             put("requestedAtEpochMs", request.requestedAtEpochMs)
+            request.deltaVersion?.let { version ->
+                require(version == WatchProjectionDeltaProtocol.DELTA_VERSION)
+                put("deltaVersion", version)
+                request.baseline?.let { put("baseline", WatchProjectionDeltaProtocol.baselineJson(it)) }
+            }
         }.toString()
     }
 
@@ -74,6 +81,11 @@ object WatchScheduleRefreshProtocol {
         return Request(
             requestId = validatedRequestId(root.getString("requestId")),
             requestedAtEpochMs = root.strictPositiveLong("requestedAtEpochMs"),
+            // Unknown optional capabilities fall back to the existing full snapshot response.
+            deltaVersion = if (root.opt("deltaVersion") == 1) 1 else null,
+            baseline = if (root.opt("deltaVersion") == 1 && root.has("baseline")) {
+                WatchProjectionDeltaProtocol.parseBaseline(root.getJSONObject("baseline"))
+            } else null,
         )
     }
 

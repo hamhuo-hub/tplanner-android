@@ -6,7 +6,7 @@ import org.json.JSONObject
 /**
  * RFC 8785 (JCS) 规范化序列化 —— 与服务器/桌面端的 canonicalize 语义一致,
  * 保证三端对同一 state 计算出的 stateHash 逐字节相同(键排序、ES 字符串转义、数字格式)。
- * 仅支持协议中实际出现的 JSON 类型(string/boolean/long/double/null/object/array)。
+ * 手机中央同步与 Wear 投影 delta 共用；仅支持协议中实际出现的 JSON 类型。
  */
 object Jcs {
 

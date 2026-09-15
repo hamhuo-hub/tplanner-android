@@ -310,9 +310,16 @@ class WatchTaskImportService : Service() {
             }.onFailure { error ->
                 Log.e(TAG, "Unable to prepare RFCOMM refresh request=${request.requestId}", error)
             }.getOrNull()
+            val wire = snapshot?.let { target ->
+                if (request.deltaVersion == 1) {
+                    WatchScheduleSync.transferPayload(applicationContext, target, request.baseline)
+                } else {
+                    target
+                }
+            }
             val response = WatchScheduleRefreshProtocol.Response(
                 requestId = request.requestId,
-                snapshot = snapshot,
+                snapshot = wire,
                 errorCode = if (snapshot == null) "SNAPSHOT_UNAVAILABLE" else null,
             )
             ScheduleRfcommProtocol.writeFrame(
@@ -322,8 +329,28 @@ class WatchTaskImportService : Service() {
             )
             if (snapshot == null) return
 
+            var reply = ScheduleRfcommProtocol.readFrame(socket.inputStream)
+            if (WatchScheduleRefreshProtocol.isRefreshRequest(reply)) {
+                val retry = WatchScheduleRefreshProtocol.decodeRequest(reply)
+                require(wire != null && WatchProjectionDeltaProtocol.isDelta(wire)) {
+                    "Full fallback requires a rejected delta"
+                }
+                require(
+                    retry.requestId == request.requestId &&
+                        retry.deltaVersion == 1 && retry.baseline == null,
+                ) { "Invalid full fallback request" }
+                // Keep the original full snapshot: rebuilding here could change both the target
+                // and the command acknowledgement barrier while the watch retries installation.
+                ScheduleRfcommProtocol.writeFrame(
+                    socket.outputStream,
+                    WatchScheduleRefreshProtocol.encodeResponse(
+                        WatchScheduleRefreshProtocol.Response(request.requestId, snapshot),
+                    ).toByteArray(Charsets.UTF_8),
+                )
+                reply = ScheduleRfcommProtocol.readFrame(socket.inputStream)
+            }
             val receipt = WatchScheduleRefreshProtocol.decodeReceipt(
-                ScheduleRfcommProtocol.readFrame(socket.inputStream),
+                reply,
             )
             val expected = WatchScheduleRefreshProtocol.receiptFor(
                 requestId = request.requestId,

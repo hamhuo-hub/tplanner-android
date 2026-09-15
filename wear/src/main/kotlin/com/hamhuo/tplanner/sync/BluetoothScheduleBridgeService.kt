@@ -275,29 +275,60 @@ class BluetoothScheduleBridgeService : Service() {
             CONNECTION_TIMEOUT_MS,
             TimeUnit.MILLISECONDS,
         )
-        var response = ScheduleRfcommProtocol.NAK_BYTE
-        try {
-            val payload = ScheduleRfcommProtocol.readFrame(socket.inputStream)
-            val result = ScheduleStore.store(this, payload, ScheduleStore.SOURCE_BLUETOOTH)
-            response = if (result.shouldAcknowledge) {
+        var responseDue = true
+        fun respond(result: ScheduleStore.StoreResult) {
+            val response = if (result.shouldAcknowledge) {
                 ScheduleRfcommProtocol.ACK_BYTE
             } else {
                 ScheduleRfcommProtocol.NAK_BYTE
             }
-            Log.d(
-                TAG,
-                "handleConnection: result=$result response=$response",
-            )
+            socket.outputStream.write(response)
+            socket.outputStream.flush()
+            responseDue = false
+            Log.d(TAG, "handleConnection: result=$result response=$response")
+        }
+        try {
+            val firstFrame = ScheduleRfcommProtocol.readFrame(socket.inputStream)
+            val negotiatedDelta = WatchProjectionDeltaProtocol.isHello(firstFrame)
+            val payload = if (negotiatedDelta) {
+                ScheduleRfcommProtocol.writeFrame(
+                    socket.outputStream,
+                    ScheduleRfcommProtocol.encodePayload(
+                        WatchProjectionDeltaProtocol.encodeBaseline(ScheduleStore.deltaBaseline(this)),
+                    ),
+                )
+                ScheduleRfcommProtocol.readFrame(socket.inputStream)
+            } else {
+                firstFrame
+            }
+            val result = ScheduleStore.store(this, payload, ScheduleStore.SOURCE_BLUETOOTH)
+            respond(result)
+            if (negotiatedDelta && WatchProjectionDeltaProtocol.isDelta(payload) &&
+                !result.shouldAcknowledge
+            ) {
+                // The phone can recover from a lost baseline with one full retry on this socket.
+                // Direct legacy frames and rejected full snapshots retain their single reply.
+                responseDue = true
+                val fullSnapshot = ScheduleRfcommProtocol.readFrame(socket.inputStream)
+                val retryResult = if (WatchProjectionDeltaProtocol.isDelta(fullSnapshot)) {
+                    ScheduleStore.StoreResult.REJECTED
+                } else {
+                    ScheduleStore.store(this, fullSnapshot, ScheduleStore.SOURCE_BLUETOOTH)
+                }
+                respond(retryResult)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "handleConnection: rejected malformed or incomplete frame", e)
         } finally {
-            timeout.cancel(false)
-            runCatching {
-                socket.outputStream.write(response)
-                socket.outputStream.flush()
-            }.onFailure { error ->
-                Log.w(TAG, "handleConnection: failed to send response=$response", error)
+            if (responseDue) {
+                runCatching {
+                    socket.outputStream.write(ScheduleRfcommProtocol.NAK_BYTE)
+                    socket.outputStream.flush()
+                }.onFailure { error ->
+                    Log.w(TAG, "handleConnection: failed to send rejection", error)
+                }
             }
+            timeout.cancel(false)
         }
     }
 
@@ -315,7 +346,7 @@ class BluetoothScheduleBridgeService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "schedule_bridge"
         private const val NOTIFICATION_ID = 0x5450
         private const val RETRY_DELAY_MS = 5_000L
-        private const val CONNECTION_TIMEOUT_MS = 10_000L
+        private const val CONNECTION_TIMEOUT_MS = 20_000L
         val RFCOMM_UUID: UUID = UUID.fromString("7f8a9b2c-3d4e-5f6a-7b8c-9d0e1f2a3b4c")
 
         internal fun hasBluetoothConnectPermission(context: Context): Boolean =

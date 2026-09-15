@@ -51,6 +51,7 @@ internal object WatchManualSync {
     private const val IO_TIMEOUT_SECONDS = 10L
     private const val RESPONSE_TIMEOUT_SECONDS = 12L
     private const val RFCOMM_CONNECT_TIMEOUT_MS = 10_000L
+    private const val RFCOMM_WRITE_TIMEOUT_MS = 5_000L
     private const val RFCOMM_RESPONSE_TIMEOUT_MS = 12_000L
     private const val RFCOMM_ACK_TIMEOUT_MS = 5_000L
 
@@ -225,30 +226,61 @@ internal object WatchManualSync {
             withSocketWatchdog(connected, RFCOMM_CONNECT_TIMEOUT_MS, "connect") {
                 connected.connect()
             }
-            ScheduleRfcommProtocol.writeFrame(
-                connected.outputStream,
-                WatchScheduleRefreshProtocol.encodeRequest(request)
-                    .toByteArray(Charsets.UTF_8),
+            val deltaRequest = request.copy(
+                deltaVersion = WatchProjectionDeltaProtocol.DELTA_VERSION,
+                baseline = ScheduleStore.deltaBaseline(context),
             )
+            withSocketWatchdog(connected, RFCOMM_WRITE_TIMEOUT_MS, "request write") {
+                ScheduleRfcommProtocol.writeFrame(
+                    connected.outputStream,
+                    WatchScheduleRefreshProtocol.encodeRequest(deltaRequest)
+                        .toByteArray(Charsets.UTF_8),
+                )
+            }
             val response = WatchScheduleRefreshProtocol.decodeResponse(
                 withSocketWatchdog(connected, RFCOMM_RESPONSE_TIMEOUT_MS, "response") {
                     ScheduleRfcommProtocol.readFrame(connected.inputStream)
                 },
             )
-            if (response.requestId != request.requestId || response.snapshot == null) {
+            if (response.requestId != request.requestId) {
                 return AttemptResult.INVALID_RESPONSE
             }
-            if (!storeSnapshot(context, response.snapshot)) return AttemptResult.INVALID_RESPONSE
+            var snapshot = response.snapshot ?: return AttemptResult.INVALID_RESPONSE
+            if (!storeSnapshot(context, snapshot, ScheduleStore.SOURCE_BLUETOOTH)) {
+                if (!WatchProjectionDeltaProtocol.isDelta(snapshot)) return AttemptResult.INVALID_RESPONSE
+                // The receiver may have installed another projection since advertising its base.
+                // Keep the request identity and explicitly request one authoritative full retry.
+                withSocketWatchdog(connected, RFCOMM_WRITE_TIMEOUT_MS, "full request write") {
+                    ScheduleRfcommProtocol.writeFrame(
+                        connected.outputStream,
+                        ScheduleRfcommProtocol.encodePayload(
+                            WatchScheduleRefreshProtocol.encodeRequest(deltaRequest.copy(baseline = null)),
+                        ),
+                    )
+                }
+                val fullResponse = WatchScheduleRefreshProtocol.decodeResponse(
+                    withSocketWatchdog(connected, RFCOMM_RESPONSE_TIMEOUT_MS, "full response") {
+                        ScheduleRfcommProtocol.readFrame(connected.inputStream)
+                    },
+                )
+                if (fullResponse.requestId != request.requestId) return AttemptResult.INVALID_RESPONSE
+                snapshot = fullResponse.snapshot ?: return AttemptResult.INVALID_RESPONSE
+                if (WatchProjectionDeltaProtocol.isDelta(snapshot) ||
+                    !storeSnapshot(context, snapshot, ScheduleStore.SOURCE_BLUETOOTH)
+                ) return AttemptResult.INVALID_RESPONSE
+            }
             val receipt = WatchScheduleRefreshProtocol.receiptFor(
                 requestId = request.requestId,
-                snapshot = response.snapshot,
+                snapshot = snapshot,
                 acceptedAtEpochMs = System.currentTimeMillis(),
             )
-            ScheduleRfcommProtocol.writeFrame(
-                connected.outputStream,
-                WatchScheduleRefreshProtocol.encodeReceipt(receipt)
-                    .toByteArray(Charsets.UTF_8),
-            )
+            withSocketWatchdog(connected, RFCOMM_WRITE_TIMEOUT_MS, "receipt write") {
+                ScheduleRfcommProtocol.writeFrame(
+                    connected.outputStream,
+                    WatchScheduleRefreshProtocol.encodeReceipt(receipt)
+                        .toByteArray(Charsets.UTF_8),
+                )
+            }
             val ack = withSocketWatchdog(connected, RFCOMM_ACK_TIMEOUT_MS, "ACK") {
                 connected.inputStream.read()
             }
@@ -274,8 +306,12 @@ internal object WatchManualSync {
         }
     }
 
-    private fun storeSnapshot(context: Context, snapshot: String): Boolean = when (
-        ScheduleStore.store(context, snapshot)
+    private fun storeSnapshot(
+        context: Context,
+        snapshot: String,
+        sourceOverride: String? = null,
+    ): Boolean = when (
+        ScheduleStore.store(context, snapshot, sourceOverride)
     ) {
         ScheduleStore.StoreResult.STORED,
         ScheduleStore.StoreResult.ALREADY_CURRENT,

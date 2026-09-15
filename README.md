@@ -1,5 +1,16 @@
 # tPlanner
 
+## 蓝牙快照增量同步
+
+手机主动推送与手表主动刷新的 RFCOMM 快照链路支持增量同步，复用 Sync V4 的
+`SnapshotDeltaCore` 和 JCS 哈希实现。手表声明已提交快照的版本与完整状态哈希；手机从最近
+8 份持久快照中匹配基线，仅传变化的任务、日期标记及来源元数据。首次连接、旧设备、基线
+失效或增量比全量更大时发送完整快照，增量安装失败时在同一连接回退一次全量。
+
+手表重建后沿用原快照校验，将原始基线与渲染投影一起提交，提交成功后才发送回执并推进
+命令完成状态。手动刷新从已安装的中央 mirror 读取权威事项及对应版本。GMS Data Layer
+继续传完整快照；手表上行 semantic command 和两阶段回执含义保持一致。
+
 ## Hop / 跃时表盘（开发中）
 
 Wear 新增 Hop：当前时间位于屏幕中央，放大的虚拟表盘随时间移动；日程只画与可见窗口
@@ -141,4 +152,3 @@ pwsh scripts/generate-watch-previews.ps1
    - HEAD 恰好在 tag 上 → `versionName = 8.0.0`，`versionCode = 8000`（主×1000 + 次×100 + 补丁）
    - HEAD 在 tag 之后 → `versionName = 8.0.0-dev`（开发版，可带 `-dirty`）
 3. 查看将生成的版本：`.\gradlew.bat printVersion`
-

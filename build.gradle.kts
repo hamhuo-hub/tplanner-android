@@ -1,5 +1,12 @@
 import java.io.ByteArrayOutputStream
 
+buildscript {
+    dependencies {
+        // AGP 9 supplies Kotlin; raise its compiler together with the Compose compiler plugin.
+        classpath(libs.kotlin.gradle.plugin)
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false

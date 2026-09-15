@@ -25,7 +25,8 @@ val hasProjectKeystore = keystoreProperties.containsKey("storeFile")
 
 android {
     namespace = "com.hamhuo.tplanner"
-    compileSdk = 35
+    // Current stable AndroidX Compose/Lifecycle artifacts require API 37.
+    compileSdk = 37
 
     signingConfigs {
         if (hasProjectKeystore) {
@@ -90,8 +91,8 @@ android {
 }
 
 dependencies {
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.core)
+    implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
@@ -104,9 +105,8 @@ dependencies {
     // 国行三星无 GMS 时走经典蓝牙 RFCOMM fallback。
     implementation(libs.play.services.wearable)
     implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.datastore.preferences)
 }
 

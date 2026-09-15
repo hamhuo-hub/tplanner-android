@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
@@ -21,6 +22,9 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.EOFException
+import java.io.SequenceInputStream
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.UUID
@@ -53,6 +57,8 @@ object WatchScheduleSync {
     private const val KEY_LAST_VERSION = "last_version"
     private const val KEY_LAST_PAYLOAD = "last_v3_projection_payload"
     private const val KEY_PENDING_PAYLOAD = "pending_payload"
+    private const val KEY_SNAPSHOT_HISTORY = "projection_snapshot_history_v1"
+    private const val SNAPSHOT_HISTORY_LIMIT = 8
     private const val SYNC_JOB_ID = 0x545053
     private const val RFCOMM_CONNECT_TIMEOUT_MS = 10_000L
     private const val RFCOMM_ACK_TIMEOUT_MS = 5_000L
@@ -177,6 +183,7 @@ object WatchScheduleSync {
                     .putLong(KEY_LAST_VERSION, version)
                     .putString(KEY_LAST_PAYLOAD, payload)
                     .putString(KEY_PENDING_PAYLOAD, payload)
+                    .putString(KEY_SNAPSHOT_HISTORY, snapshotHistoryWith(prefs, payload))
                     .commit()
                 if (committed) {
                     QueuedSnapshot(days.first().date, version, hash, tasks.size, payload)
@@ -220,10 +227,48 @@ object WatchScheduleSync {
         val payload = synchronized(stateLock) {
             val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val latest = prefs.getString(KEY_LAST_PAYLOAD, null) ?: return@synchronized null
-            if (!prefs.edit().putString(KEY_PENDING_PAYLOAD, latest).commit()) null else latest
+            if (!prefs.edit()
+                    .putString(KEY_PENDING_PAYLOAD, latest)
+                    .putString(KEY_SNAPSHOT_HISTORY, snapshotHistoryWith(prefs, latest))
+                    .commit()
+            ) null else latest
         } ?: return null
         return payload.takeIf { scheduleJob(appContext) }
     }
+
+    /** Selects an exact durable base; missing/evicted bases use the original full target. */
+    internal fun transferPayload(
+        context: Context,
+        target: String,
+        baseline: WatchProjectionDeltaProtocol.Baseline?,
+    ): String = synchronized(stateLock) {
+        if (baseline == null) return@synchronized target
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val base = snapshotHistory(prefs).lastOrNull { snapshot ->
+            runCatching { WatchProjectionDeltaProtocol.baseline(snapshot) == baseline }
+                .getOrDefault(false)
+        }
+        WatchProjectionDeltaProtocol.create(base, target)
+    }
+
+    // Call only under stateLock, and commit the result with the corresponding latest/pending
+    // update. Including existing keys also migrates an installation without history safely.
+    private fun snapshotHistory(prefs: SharedPreferences): List<String> {
+        val stored = runCatching {
+            val history = JSONArray(prefs.getString(KEY_SNAPSHOT_HISTORY, "[]"))
+            (0 until history.length()).map { history.getString(it) }
+        }.getOrDefault(emptyList())
+        return (stored + listOfNotNull(
+            prefs.getString(KEY_LAST_PAYLOAD, null),
+            prefs.getString(KEY_PENDING_PAYLOAD, null),
+        )).distinct().takeLast(SNAPSHOT_HISTORY_LIMIT)
+    }
+
+    private fun snapshotHistoryWith(prefs: SharedPreferences, payload: String): String =
+        JSONArray(
+            (snapshotHistory(prefs).filterNot { it == payload } + payload)
+                .takeLast(SNAPSHOT_HISTORY_LIMIT),
+        ).toString()
 
     /** Reattach the persisted hand-off after reboot, package update, or an OS-lost job. */
     fun resumePending(context: Context): Boolean {
@@ -397,60 +442,114 @@ object WatchScheduleSync {
             return false
         }
 
-        var socket: BluetoothSocket? = null
-        try {
-            if (Thread.currentThread().isInterrupted) return false
-            val connectedSocket = watch.createRfcommSocketToServiceRecord(RFCOMM_UUID)
-            socket = connectedSocket
-            registerActiveSocket(connectedSocket)
-            if (Thread.currentThread().isInterrupted) throw InterruptedException("flush cancelled")
-            // cancelDiscovery() itself requires BLUETOOTH_SCAN on Android 12+. Re-check at
-            // the call site in case the permission was revoked after the initial guard.
-            if (hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_SCAN)) {
-                runCatching { adapter.cancelDiscovery() }
-                    .onFailure { Log.w(TAG, "flushViaBluetooth: cancelDiscovery failed", it) }
-            }
-            withSocketWatchdog(
-                socket = connectedSocket,
-                timeoutMs = RFCOMM_CONNECT_TIMEOUT_MS,
-                operation = "connect",
-            ) {
-                connectedSocket.connect()
-            }
-
-            ScheduleRfcommProtocol.writeFrame(connectedSocket.outputStream, bytes)
-
-            // Wait for the watch's single-byte ACK so we know the payload was fully consumed.
-            val ack = withSocketWatchdog(
-                socket = connectedSocket,
-                timeoutMs = RFCOMM_ACK_TIMEOUT_MS,
-                operation = "ACK read",
-            ) {
-                connectedSocket.inputStream.read()
-            }
-            if (ack == ScheduleRfcommProtocol.ACK_BYTE) {
-                val cleared = clearPendingAfterBluetooth(context, payload)
-                if (cleared) {
-                    Log.d(TAG, "flushViaBluetooth: ACK received, pending payload cleared")
-                    return true
+        // Only the explicit legacy NAK allows a second connection. Timeouts and malformed
+        // capability responses keep pending state so a broken session cannot masquerade as ACK.
+        for (attempt in 0..1) {
+            var socket: BluetoothSocket? = null
+            try {
+                if (Thread.currentThread().isInterrupted) return false
+                val connectedSocket = watch.createRfcommSocketToServiceRecord(RFCOMM_UUID)
+                socket = connectedSocket
+                registerActiveSocket(connectedSocket)
+                if (Thread.currentThread().isInterrupted) throw InterruptedException("flush cancelled")
+                // cancelDiscovery() itself requires BLUETOOTH_SCAN on Android 12+. Re-check at
+                // the call site in case the permission was revoked after the initial guard.
+                if (hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_SCAN)) {
+                    runCatching { adapter.cancelDiscovery() }
+                        .onFailure { Log.w(TAG, "flushViaBluetooth: cancelDiscovery failed", it) }
                 }
-                Log.d(TAG, "flushViaBluetooth: ACK received, but newer or uncleared payload remains")
-                return false
-            } else {
+                withSocketWatchdog(
+                    socket = connectedSocket,
+                    timeoutMs = RFCOMM_CONNECT_TIMEOUT_MS,
+                    operation = "connect",
+                ) {
+                    connectedSocket.connect()
+                }
+
+                val wire = if (attempt == 0) {
+                    var legacyWatch = false
+                    val baseline = withSocketWatchdog(
+                        socket = connectedSocket,
+                        timeoutMs = RFCOMM_ACK_TIMEOUT_MS,
+                        operation = "delta negotiation",
+                    ) {
+                        ScheduleRfcommProtocol.writeFrame(
+                            connectedSocket.outputStream,
+                            ScheduleRfcommProtocol.encodePayload(WatchProjectionDeltaProtocol.encodeHello()),
+                        )
+                        val input = connectedSocket.inputStream
+                        when (val first = input.read()) {
+                            ScheduleRfcommProtocol.NAK_BYTE -> {
+                                legacyWatch = true
+                                null
+                            }
+                            -1 -> throw EOFException("Missing delta negotiation response")
+                            else -> WatchProjectionDeltaProtocol.decodeBaseline(
+                                ScheduleRfcommProtocol.readFrame(
+                                    SequenceInputStream(
+                                        ByteArrayInputStream(byteArrayOf(first.toByte())),
+                                        input,
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+                    if (legacyWatch) {
+                        Log.d(TAG, "flushViaBluetooth: legacy watch; reconnecting with full snapshot")
+                        continue
+                    }
+                    transferPayload(context, payload, baseline)
+                } else {
+                    payload
+                }
+
+                // Both potentially blocking writes and reads are bounded. ACK follows durable
+                // installation; a rejected delta retries this exact full target on the same socket.
+                var ack = withSocketWatchdog(
+                    socket = connectedSocket,
+                    timeoutMs = RFCOMM_ACK_TIMEOUT_MS,
+                    operation = "snapshot write and ACK",
+                ) {
+                    ScheduleRfcommProtocol.writeFrame(
+                        connectedSocket.outputStream,
+                        ScheduleRfcommProtocol.encodePayload(wire),
+                    )
+                    connectedSocket.inputStream.read()
+                }
+                if (ack == ScheduleRfcommProtocol.NAK_BYTE && WatchProjectionDeltaProtocol.isDelta(wire)) {
+                    ack = withSocketWatchdog(
+                        socket = connectedSocket,
+                        timeoutMs = RFCOMM_ACK_TIMEOUT_MS,
+                        operation = "full fallback write and ACK",
+                    ) {
+                        ScheduleRfcommProtocol.writeFrame(connectedSocket.outputStream, bytes)
+                        connectedSocket.inputStream.read()
+                    }
+                }
+                if (ack == ScheduleRfcommProtocol.ACK_BYTE) {
+                    val cleared = clearPendingAfterBluetooth(context, payload)
+                    if (cleared) {
+                        Log.d(TAG, "flushViaBluetooth: ACK received, pending payload cleared")
+                        return true
+                    }
+                    Log.d(TAG, "flushViaBluetooth: ACK received, but newer or uncleared payload remains")
+                    return false
+                }
                 Log.w(TAG, "flushViaBluetooth: unexpected ACK byte=$ack")
                 return false
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                Log.d(TAG, "flushViaBluetooth: transfer cancelled")
+                return false
+            } catch (e: Exception) {
+                Log.e(TAG, "flushViaBluetooth: transfer failed", e)
+                return false
+            } finally {
+                socket?.let(::unregisterActiveSocket)
+                runCatching { socket?.close() }
             }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            Log.d(TAG, "flushViaBluetooth: transfer cancelled")
-            return false
-        } catch (e: Exception) {
-            Log.e(TAG, "flushViaBluetooth: transfer failed", e)
-            return false
-        } finally {
-            socket?.let(::unregisterActiveSocket)
-            runCatching { socket?.close() }
         }
+        return false
     }
 
     /** Clears the pending payload only if it hasn't been replaced by a newer snapshot. */
