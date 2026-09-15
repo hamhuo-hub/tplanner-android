@@ -86,6 +86,7 @@
     <string name="sync_logs_empty">No logs yet</string>
     <string name="sync_server_title">Sync Server</string>
     <string name="sync_token_hint">Access token</string>
+    <string name="calendar_projection_title">System calendar</string>
     <string name="sync_reconnect">Reconnect</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
@@ -94,6 +95,12 @@
     <string name="location_locating">Locating…</string>
     <string name="location_unavailable">Location unavailable</string>
     <string name="ai_schedule_extraction">AI schedule extraction</string>
+    <string name="untangle_title_confirm">Add tasks?</string>
+    <string name="untangle_confirm_title">Create these extracted tasks?</string>
+    <string name="untangle_no_time">No time set</string>
+    <string name="untangle_checklist_label">Checklist</string>
+    <string name="untangle_confirm_action">Add tasks</string>
+    <string name="untangle_created_multiple_toast">Created %1$d tasks</string>
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_full">MMMM d, yyyy</string>
     <string name="date_pattern_month_day_weekday">MMM d · E</string>

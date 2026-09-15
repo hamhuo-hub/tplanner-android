@@ -392,7 +392,7 @@ fun MainScreen(
     var showScheduleSheet by remember { mutableStateOf(false) }
     var openingScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
-    var sheetAction by remember { mutableStateOf<DeepSeekAnalysisService.ProposedAction?>(null) }
+    var sheetTasks by remember { mutableStateOf<List<DeepSeekAnalysisService.ProposedTask>>(emptyList()) }
     var sheetRequestId by remember { mutableStateOf("") }
     var untangleInput by remember { mutableStateOf("") }
     var prefillLocation by remember { mutableStateOf("") }
@@ -438,15 +438,15 @@ fun MainScreen(
     }
 
     LaunchedEffect(showScheduleSheet, pendingLocationRequestId, locationPermissionGeneration,
-        phoneLocationForeground, thinking, sheetAction) {
+        phoneLocationForeground, thinking, sheetTasks.isNotEmpty()) {
         val targetRequestId = pendingLocationRequestId ?: return@LaunchedEffect
-        if (!phoneLocationForeground || !showScheduleSheet || thinking || sheetAction != null) return@LaunchedEffect
+        if (!phoneLocationForeground || !showScheduleSheet || thinking || sheetTasks.isNotEmpty()) return@LaunchedEffect
         if (!hasPhoneLocationPermission(context)) return@LaunchedEffect
         val fix = LocationCapture.capture(context) ?: run {
             phoneLocationState = PhoneLocationState.UNAVAILABLE; return@LaunchedEffect
         }
         val resolvedLocation = AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
-        if (showScheduleSheet && !thinking && sheetAction == null) {
+        if (showScheduleSheet && !thinking && sheetTasks.isEmpty()) {
             gpsLat = fix.lat; gpsLng = fix.lng; prefillLocation = resolvedLocation
             phoneLocationState = if (resolvedLocation.isBlank()) PhoneLocationState.UNAVAILABLE else PhoneLocationState.READY
         }
@@ -461,7 +461,7 @@ fun MainScreen(
         openingScheduleSheet = true
         scope.launch {
             try {
-                showScheduleSheet = true; thinking = false; sheetAction = null
+                showScheduleSheet = true; thinking = false; sheetTasks = emptyList()
                 val openedRequestId = "direct-${UUID.randomUUID()}"
                 sheetRequestId = openedRequestId
                 untangleInput = ""; prefillLocation = ""; gpsLat = 0.0; gpsLng = 0.0
@@ -697,15 +697,19 @@ fun MainScreen(
             "request=$requestId phase=submit inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
         )
         thinking = true
-        sheetAction = null
+        sheetTasks = emptyList()
         scope.launch {
             try {
-                val action = deepseekService?.extractSchedule(text, stamp, loc, requestId)
+                val tasks = deepseekService?.extractTasks(text, stamp, loc, requestId).orEmpty()
                 if (sheetRequestId != requestId || !showScheduleSheet) return@launch
 
-                if (action != null) {
-                    Log.i(LLM_LOG_TAG, "request=$requestId phase=route result=proposal type=${action.type}")
-                    sheetAction = action
+                if (tasks.isNotEmpty()) {
+                    Log.i(
+                        LLM_LOG_TAG,
+                        "request=$requestId phase=route result=proposal taskCount=${tasks.size} " +
+                            "scheduledCount=${tasks.count { it.startIso != null }}",
+                    )
+                    sheetTasks = tasks
                     thinking = false
                 } else {
                     Log.w(LLM_LOG_TAG, "request=$requestId phase=route result=unavailable")
@@ -724,48 +728,53 @@ fun MainScreen(
         }
     }
 
-    fun confirmAction(act: DeepSeekAnalysisService.ProposedAction) {
+    fun confirmTasks(selected: List<DeepSeekAnalysisService.ProposedTask>) {
         val requestId = sheetRequestId.ifBlank { return }
-        val start = parseAgentDatetime(act.startIso)
-        val end = parseAgentDatetime(act.endIso)
-        if (start == null || end == null || !end.isAfter(start)) {
-            Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
-            sheetAction = null
-            return
+        if (selected.isEmpty() || thinking) return
+        val now = System.currentTimeMillis()
+        // Every id derives from the persisted requestId, so confirming the same proposal again
+        // rewrites exactly these records through the store's upsert path instead of duplicating them.
+        val items = selected.mapIndexed { index, task ->
+            val start = task.startIso?.let(::parseAgentDatetime)
+            val end = task.endIso?.let(::parseAgentDatetime)
+            // A task the user gave no time for keeps no time: no date is fabricated for it.
+            val endAt = if (start == null) Instant.EPOCH else end?.takeIf { it.isAfter(start) } ?: start.plusSeconds(3_600)
+            ScheduleItem(
+                id = stableUntangleId("task:$index", requestId),
+                title = task.title,
+                type = "task",
+                start = start ?: Instant.EPOCH,
+                end = endAt,
+                completed = false,
+                checklist = task.checklist.mapIndexed { checkIndex, text ->
+                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), text, false)
+                },
+                colorId = task.colorId,
+                note = task.note,
+                deletedAt = 0L,
+                updatedAt = now,
+                scheduled = start != null,
+                lat = gpsLat,
+                lng = gpsLng,
+            )
         }
-        val ev = ScheduleItem(
-            id = stableUntangleId("event", requestId),
-            title = act.title,
-            type = act.type,
-            start = start,
-            end = end,
-            completed = false,
-            checklist = act.checklist.mapIndexed { index, item ->
-                CheckItem(stableUntangleId("check:$index", requestId), item, false)
-            },
-            colorId = act.colorId,
-            note = act.note,
-            deletedAt = 0L,
-            updatedAt = System.currentTimeMillis(),
-            lat = gpsLat,
-            lng = gpsLng,
-        )
-        if (thinking) return
         thinking = true
         scope.launch {
             try {
-                eventWriteMutex.withLock { eventStore.save(ev) }
+                // One local transaction for the whole accepted proposal.
+                eventWriteMutex.withLock { eventStore.saveAll(items) }
                 if (showScheduleSheet && sheetRequestId == requestId) {
                     showScheduleSheet = false
                     thinking = false
-                    sheetAction = null
+                    sheetTasks = emptyList()
                     sheetRequestId = ""
                     untangleInput = ""
                     prefillLocation = ""
                     gpsLat = 0.0; gpsLng = 0.0
                     Toast.makeText(
                         context,
-                        context.getString(R.string.schedule_created_toast, act.title),
+                        if (items.size == 1) context.getString(R.string.schedule_created_toast, items.first().title)
+                        else context.getString(R.string.untangle_created_multiple_toast, items.size),
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -802,7 +811,7 @@ fun MainScreen(
                     locationLoading = phoneLocationState == PhoneLocationState.LOCATING,
                     initialText = untangleInput,
                     thinking = thinking,
-                    action = sheetAction,
+                    tasks = sheetTasks,
                     onTextChange = { text ->
                         untangleInput = text
                     },
@@ -810,12 +819,12 @@ fun MainScreen(
                         Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
                         showScheduleSheet = false
                         thinking = false
-                        sheetAction = null
+                        sheetTasks = emptyList()
                         sheetRequestId = ""
                         untangleInput = ""
                     },
                     onSubmit = submitForExtraction,
-                    onConfirmAction = ::confirmAction,
+                    onConfirmTasks = ::confirmTasks,
                 )
             } else {
                 MainLayout(

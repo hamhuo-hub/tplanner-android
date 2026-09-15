@@ -87,6 +87,7 @@
     <string name="sync_logs_empty">暂无日志</string>
     <string name="sync_server_title">同步服务器</string>
     <string name="sync_token_hint">访问令牌</string>
+    <string name="calendar_projection_title">系统日历</string>
     <string name="sync_reconnect">重置连接</string>
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
@@ -95,6 +96,12 @@
     <string name="location_locating">正在定位…</string>
     <string name="location_unavailable">未获取位置</string>
     <string name="ai_schedule_extraction">AI 日程提取</string>
+    <string name="untangle_title_confirm">加个任务？</string>
+    <string name="untangle_confirm_title">提取到以下任务，确认创建吗？</string>
+    <string name="untangle_no_time">未安排时间</string>
+    <string name="untangle_checklist_label">清单</string>
+    <string name="untangle_confirm_action">加入任务</string>
+    <string name="untangle_created_multiple_toast">已创建 %1$d 个任务</string>
     <!-- 日期格式（DateTimeFormatter 模式） -->
     <string name="date_pattern_full">yyyy年M月d日</string>
     <string name="date_pattern_month_day_weekday">M月d日 · E</string>
