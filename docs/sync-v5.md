@@ -101,6 +101,10 @@ queue cannot remain blocked behind poison data.
 A stale put/delete returns a conflict, never silently overwrites a newer document.
 Recreating a deleted UID requires that tombstone's current revision. A delete of a
 nonexistent record with base 0 creates a tombstone, preventing delayed creates reviving it.
+A server never clears a device's accepted sequences. A client that must abandon its
+sequence space — after a changed server, or after a genuine gap — therefore mints a NEW
+`deviceId` and restarts at 1; rewinding an existing device identity is never valid
+recovery, because the server cannot tell a rewind from a duplicate.
 Receipts are committed in the same transaction as all accepted mutations:
 
 ```json
@@ -126,10 +130,14 @@ in-flight save may advance its base only from that save's own applied receipt. N
 blindly rebase an edit after another device wins. Keep conflicts/rejections and their
 local calendar document visible with explicit discard/reapply actions.
 
-Install snapshots atomically. Do not clear an applied pending command until a snapshot
-with revision at least its applied receipt revision has been installed. Older or different
+Install snapshots atomically. Do not clear an applied pending command until the installed
+state covers its receipt. A receipt's own revision is the value that matters: a batch's
+top-level `revision` is the global revision and may exceed the revision of the individual
+record a receipt refers to, so a command is releasable once either the installed snapshot
+revision is at least the receipt revision, or the mirror already holds that record at a
+revision at least as new. Older or different
 serverId snapshots must not overwrite current state silently; a changed server requires
-an explicit reset/reconnect choice. Local edits must survive process restart and transport
+an explicit reset/reconnect choice of its own. Local edits must survive process restart and transport
 failure. UI state reads the mirror overlaid with still-pending local documents.
 
 ## Watch and platform adapters
