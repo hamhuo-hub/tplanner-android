@@ -25,6 +25,9 @@ private const val RECURRENCE_TYPE = "recurrenceType"
 private const val RECURRENCE_COUNT = "recurrenceCount"
 private const val TIMEZONE = "timezone"
 
+/** Marks a rule this build can read but not edit; it must survive an unrelated edit untouched. */
+internal const val RECURRENCE_UNSUPPORTED = "unsupported"
+
 private val FREQUENCIES = mapOf("daily" to "DAILY", "weekly" to "WEEKLY", "monthly" to "MONTHLY")
 
 /** True for a synthetic occurrence id produced by [expandOccurrences]. */
@@ -37,13 +40,21 @@ private fun occurrenceId(uid: String, at: Instant) = "$uid@${at.epochSecond}"
 
 // ── Document → UI ─────────────────────────────────────────────────────────────
 
+/**
+ * The editor's view of the rule. Empty when there is no rule, a frequency name when this build can
+ * edit it, and [RECURRENCE_UNSUPPORTED] when the document carries a rule the editor cannot express.
+ */
 private fun recurrenceTypeOf(document: JcalDocument): String {
-    val freq = document.recurrence?.optString("freq").orEmpty().uppercase()
-    return FREQUENCIES.entries.firstOrNull { it.value == freq }?.key.orEmpty()
+    val rule = document.recurrence ?: return ""
+    val freq = rule.optString("freq").orEmpty().uppercase()
+    return FREQUENCIES.entries.firstOrNull { it.value == freq }?.key ?: RECURRENCE_UNSUPPORTED
 }
 
 private fun recurrenceCountOf(document: JcalDocument): Int =
     document.recurrence?.optInt("count", 0)?.takeIf { it > 0 } ?: MAX_TASK_RECURRENCE_COUNT
+
+/** A projection cannot express a recurrence decision when it carries no rule information at all. */
+private fun ScheduleItem.declaresRecurrence(): Boolean = extras.containsKey(RECURRENCE_TYPE)
 
 /** Master projection: one [ScheduleItem] per live document. */
 internal fun JcalDocument.toMasterItem(): ScheduleItem {
@@ -213,9 +224,18 @@ internal fun JcalDocument.applyEdit(item: ScheduleItem): JcalDocument {
     } else {
         next.withSchedule(null, null)
     }
-    // A schedule is required before a rule can be attached, so recurrence is applied last.
+    // Recurrence is applied last because a schedule is required before a rule can be attached.
+    // An edit that says nothing about recurrence, or that comes from a build which cannot express
+    // the stored rule, must leave the rule exactly as it is: silently dropping it would destroy a
+    // fact this client cannot represent.
+    val declared = item.extras[RECURRENCE_TYPE]?.toString()
     val rule = item.recurrenceRule()
-    next = if (next.start == null) next.withRecurrence(null) else next.withRecurrence(rule)
+    next = when {
+        next.start == null -> next.withRecurrence(null)
+        declared == null -> next
+        declared == RECURRENCE_UNSUPPORTED -> next
+        else -> next.withRecurrence(rule)
+    }
     return next.withCompleted(item.completed).withGeo(item.lat, item.lng)
 }
 

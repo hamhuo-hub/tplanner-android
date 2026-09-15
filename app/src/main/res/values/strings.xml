@@ -33,6 +33,7 @@
     <string name="section_color">颜色</string>
     <string name="label_start">开始</string>
     <string name="label_end">结束</string>
+    <string name="recurrence_unsupported">此重复规则由其他客户端设置，本机无法编辑，保留原样</string>
     <string name="recurrence_none">不重复</string>
     <string name="recurrence_daily">每天</string>
     <string name="recurrence_weekly">每周</string>

@@ -20,9 +20,9 @@ Require ($LASTEXITCODE -eq 0) 'Generated light tokens are stale; run python scri
 # colors, and are intentionally allowlisted by exact path and exact literal so the exception cannot
 # silently grow into a renderer/UI escape hatch.
 $numericHexAllowlist = @{
-    'shared/src/main/kotlin/com/hamhuo/tplanner/WatchTaskProtocol.kt' = @('0xFFFF_FFFF_FFFFL')
-    'app/src/main/java/com/hamhuo/tplanner/syncv3/SyncV3Uploader.kt' = @('0xFFFF_FFFF_FFFFL')
     'wear/src/main/kotlin/com/hamhuo/tplanner/watchface/FaceTide.kt' = @('0x00FFFFFF')
+    # Provider row colors are CalendarContract data, not theme colors.
+    'app/src/main/java/com/hamhuo/tplanner/calendar/CalendarProviderGateway.kt' = @('0xFF00897B')
 }
 $sourceRoots = @(
     'app/src/main',

@@ -122,7 +122,7 @@ fun ScheduleItemDetailScreen(
             event.extras["recurrenceType"]
                 ?.toString()
                 ?.lowercase()
-                ?.takeIf { it in setOf("daily", "weekly", "monthly") }
+                ?.takeIf { it == RECURRENCE_UNSUPPORTED || it in setOf("daily", "weekly", "monthly") }
                 ?: "none",
         )
     }
@@ -131,7 +131,6 @@ fun ScheduleItemDetailScreen(
         val count = if (raw is Number) raw.toInt() else raw?.toString()?.toIntOrNull() ?: 1
         mutableStateOf(count.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
     }
-    var recurrenceEdited by remember(event.id) { mutableStateOf(false) }
 
 
     val zone    = remember { APP_ZONE }
@@ -156,15 +155,14 @@ fun ScheduleItemDetailScreen(
     fun buildResult(updatedAt: Long = System.currentTimeMillis()): ScheduleItem {
         val nextExtras = event.extras.toMutableMap().apply {
             if (recurrenceType == "none") {
-                remove("recurrenceType")
+                // An explicit "none" is a decision (clear the rule); the store distinguishes it
+                // from an edit that never mentioned recurrence.
+                put("recurrenceType", "none")
                 remove("recurrenceCount")
-                // Preserve unsupported future rules through unrelated edits; clear only on intent.
-                if (recurrenceEdited) remove("_syncV3Recurrence")
             } else {
                 put("recurrenceType", recurrenceType)
                 put("recurrenceCount", recurrenceCount.coerceIn(1, MAX_TASK_RECURRENCE_COUNT))
             }
-            remove("groupId")
         }
         return event.copy(
             title     = title.ifBlank { event.title },
@@ -427,7 +425,6 @@ fun ScheduleItemDetailScreen(
                                     label = label,
                                     selected = recurrenceType == value,
                                     onClick = {
-                                        recurrenceEdited = true
                                         recurrenceType = value
                                         if (value != "none" && recurrenceCount < 2) {
                                             recurrenceCount = 2
@@ -437,7 +434,15 @@ fun ScheduleItemDetailScreen(
                                 )
                             }
                         }
-                        if (recurrenceType != "none") {
+                        if (recurrenceType == RECURRENCE_UNSUPPORTED) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                stringResource(R.string.recurrence_unsupported),
+                                color = DIM,
+                                fontSize = TPlannerTypography.PhoneSupportingSp.sp,
+                            )
+                        }
+                        if (recurrenceType != "none" && recurrenceType != RECURRENCE_UNSUPPORTED) {
                             Spacer(Modifier.height(12.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -458,8 +463,7 @@ fun ScheduleItemDetailScreen(
                                         .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount > 1) {
-                                            recurrenceEdited = true
-                                            recurrenceCount--
+                                                recurrenceCount--
                                             persistDraft()
                                         },
                                     contentAlignment = Alignment.Center,
@@ -473,8 +477,7 @@ fun ScheduleItemDetailScreen(
                                         .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusMediumDp.dp))
                                         .clickable(enabled = recurrenceCount < MAX_TASK_RECURRENCE_COUNT) {
-                                            recurrenceEdited = true
-                                            recurrenceCount++
+                                                recurrenceCount++
                                             persistDraft()
                                         },
                                     contentAlignment = Alignment.Center,

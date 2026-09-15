@@ -32,6 +32,7 @@
     <string name="section_color">Color</string>
     <string name="label_start">Start</string>
     <string name="label_end">End</string>
+    <string name="recurrence_unsupported">This repeat rule was set by another client; it is kept unchanged.</string>
     <string name="recurrence_none">Never</string>
     <string name="recurrence_daily">Daily</string>
     <string name="recurrence_weekly">Weekly</string>
