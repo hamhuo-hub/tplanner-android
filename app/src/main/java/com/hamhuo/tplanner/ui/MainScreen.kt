@@ -387,7 +387,6 @@ fun MainScreen(
     }
     val selectedView = TaskView.fromKey(selectedViewKey, userLists)
     var showListSheet by remember { mutableStateOf(false) }
-    var showNewListSheet by remember { mutableStateOf(false) }
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
     var timelineModalVisible by remember { mutableStateOf(false) }
     val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -745,8 +744,6 @@ fun MainScreen(
             note = act.note,
             deletedAt = 0L,
             updatedAt = System.currentTimeMillis(),
-            alarmEnabled = act.alarmEnabled,
-            alarmOffsetMinutes = act.alarmOffsetMinutes,
             lat = gpsLat,
             lng = gpsLng,
         )
@@ -763,13 +760,11 @@ fun MainScreen(
                     untangleInput = ""
                     prefillLocation = ""
                     gpsLat = 0.0; gpsLng = 0.0
-                    val alarmMsg = when {
-                        !act.alarmEnabled -> context.getString(R.string.schedule_created_toast, act.title)
-                        TaskAlarmScheduler.canScheduleExactAlarms(context) ->
-                            context.getString(R.string.schedule_created_with_alarm_toast, act.title)
-                        else -> context.getString(R.string.schedule_created_with_fallback_alarm_toast, act.title)
-                    }
-                    Toast.makeText(context, alarmMsg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.schedule_created_toast, act.title),
+                        Toast.LENGTH_SHORT,
+                    ).show()
                 }
             } catch (e: Exception) {
                 Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
@@ -863,7 +858,6 @@ fun MainScreen(
             listSheetState = listSheetState,
             onSelectView = { key -> selectedViewKey = key; showListSheet = false },
             onDismiss = { showListSheet = false },
-            onNewListRequest = { showNewListSheet = true },
             onDeleteList = { id ->
                 scope.launch {
                     eventStore.deleteUserList(id)
@@ -909,23 +903,6 @@ fun MainScreen(
                         pendingNewItem = updated
                         Toast.makeText(context, "无法保存事项名称，请重试", Toast.LENGTH_LONG).show()
                     }
-                }
-            },
-        )
-    }
-
-    if (showNewListSheet) {
-        NameInputSheet(
-            type = "task",
-            entityLabel = stringResource(R.string.list_entity_name),
-            initialText = "",
-            onDraftChange = {},
-            onCancel = { showNewListSheet = false },
-            onConfirm = { name ->
-                showNewListSheet = false
-                scope.launch {
-                    val list = eventStore.createUserList(name.trim())
-                    selectedViewKey = list.id
                 }
             },
         )
@@ -1015,18 +992,6 @@ fun MainScreen(
                         Toast.makeText(context, "保存失败，备注草稿仍已保留", Toast.LENGTH_LONG).show()
                         onFinished(false)
                     }
-                }
-            },
-            onCreateList = { name, onCreated ->
-                scope.launch {
-                    val list = try {
-                        eventStore.createUserList(name)
-                    } catch (_: Exception) {
-                        Toast.makeText(context, "无法创建清单，请重试", Toast.LENGTH_LONG).show()
-                        onCreated(null)
-                        return@launch
-                    }
-                    onCreated(list)
                 }
             },
         )

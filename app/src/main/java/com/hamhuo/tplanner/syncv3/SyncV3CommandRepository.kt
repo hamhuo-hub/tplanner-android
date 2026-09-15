@@ -68,10 +68,6 @@ class SyncV3CommandRepository(
         )
     }
 
-    fun enqueueListCreate(id: String, title: String) {
-        enqueue(listOf(SyncV3CommandPlanner.listCreate(id, title)))
-    }
-
     fun enqueueListRename(id: String, title: String) {
         enqueue(listOf(SyncV3CommandPlanner.listRename(id, title)))
     }

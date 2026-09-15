@@ -413,7 +413,6 @@ fun TaskItem(
             checklistDone = event.checklist.count { it.completed },
             checklistTotal = event.checklist.size,
             statusLabel = statusLabel,
-            alarmEnabled = event.alarmEnabled && !isDone,
         ),
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,

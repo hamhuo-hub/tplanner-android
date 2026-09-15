@@ -301,14 +301,6 @@ class RoomEventRepository(
         changedItems
     }
 
-    suspend fun createUserList(id: String, name: String): UserList = db.withTransaction {
-        val normalized = name.trim()
-        val sortOrder = db.userListDao().nextSortOrder()
-        db.userListDao().upsert(UserListEntity(id = id, name = normalized, sortOrder = sortOrder))
-        commands.enqueueListCreate(id, normalized)
-        UserList(id = id, name = normalized)
-    }
-
     suspend fun renameUserList(id: String, name: String): UserList? = db.withTransaction {
         val current = db.userListDao().get(id) ?: return@withTransaction null
         val normalized = name.trim()

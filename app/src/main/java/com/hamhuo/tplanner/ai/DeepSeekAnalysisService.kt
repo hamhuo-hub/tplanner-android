@@ -68,8 +68,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
         val note: String,
         val colorId: Int,
         val checklist: List<String>,
-        val alarmEnabled: Boolean,
-        val alarmOffsetMinutes: Int,
         val requestId: String,
     )
 
@@ -109,8 +107,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                     TAG,
                     "request=$logRequestId phase=extract_result result=proposal type=${normalized.type} " +
                         "titlePresent=${normalized.title.isNotBlank()} noteChars=${normalized.note.length} " +
-                        "checklistCount=${normalized.checklist.size} alarmEnabled=${normalized.alarmEnabled} " +
-                        "alarmOffsetMinutes=${normalized.alarmOffsetMinutes} " +
+                        "checklistCount=${normalized.checklist.size} " +
                         "elapsedMs=${SystemClock.elapsedRealtime() - startedAt}",
                 )
                 normalized
@@ -145,8 +142,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             note = raw.note,
             colorId = raw.colorId.takeIf { it in 0..7 } ?: 0,
             checklist = raw.checklist,
-            alarmEnabled = raw.alarmEnabled,
-            alarmOffsetMinutes = if (raw.alarmEnabled) raw.alarmOffsetMinutes.coerceIn(0, MAX_ALARM_OFFSET_MINUTES) else 0,
             requestId = raw.requestId,
         )
         val normalizedFields = buildList {
@@ -155,7 +150,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             if (parsedStart == null) add("start_at")
             if (parsedEnd == null || !end.isAfter(start)) add("end_at")
             if (normalized.colorId != raw.colorId) add("color_id")
-            if (normalized.alarmOffsetMinutes != raw.alarmOffsetMinutes) add("alarm_offset_minutes")
         }
         Log.d(
             TAG,
@@ -276,8 +270,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 note = args.optString("note", ""),
                 colorId = args.optInt("color_id", 0),
                 checklist = parseChecklist(args),
-                alarmEnabled = args.optBoolean("alarm_enabled", false),
-                alarmOffsetMinutes = args.optInt("alarm_offset_minutes", 0),
                 requestId = requestId,
             )
             Log.d(
@@ -285,8 +277,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                 "request=$requestId phase=tool_parse typeKnown=${proposal.type in SCHEDULE_TYPES} " +
                     "titlePresent=${proposal.title.isNotBlank()} startPresent=${proposal.startIso.isNotBlank()} " +
                     "endPresent=${proposal.endIso.isNotBlank()} noteChars=${proposal.note.length} " +
-                    "checklistCount=${proposal.checklist.size} alarmEnabled=${proposal.alarmEnabled} " +
-                    "alarmOffsetMinutes=${proposal.alarmOffsetMinutes}",
+                    "checklistCount=${proposal.checklist.size}",
             )
             return proposal
         } finally {
@@ -321,7 +312,7 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                         put("type", JSONObject().apply {
                             put("type", "string")
                             put("enum", JSONArray(SCHEDULE_TYPES.toList()))
-                            put("description", "event=定时提醒，status=状态或动态，task=可勾选任务。根据内容判断：有具体时间用event，待办用task，状态记录用status。默认event")
+                            put("description", "event=有时间安排的事件，status=状态或动态，task=可勾选任务。根据内容判断：有具体时间用event，待办用task，状态记录用status。默认event")
                         })
                         put("title", JSONObject().apply {
                             put("type", "string")
@@ -350,20 +341,10 @@ class DeepSeekAnalysisService(private val apiKey: String) {
                             put("items", JSONObject().put("type", "string"))
                             put("description", "task 类型的清单项；其他类型或无清单时传空数组")
                         })
-                        put("alarm_enabled", JSONObject().apply {
-                            put("type", "boolean")
-                            put("description", "是否为该日程创建系统闹铃。event 类型且时间在未来默认 true，其他默认 false")
-                        })
-                        put("alarm_offset_minutes", JSONObject().apply {
-                            put("type", "integer")
-                            put("minimum", 0)
-                            put("maximum", MAX_ALARM_OFFSET_MINUTES)
-                            put("description", "闹铃提前分钟数。alarm_enabled=false 时必须为 0；alarm_enabled=true 时默认 0（开始时）")
-                        })
                     })
                     put("required", JSONArray(listOf(
                         "type", "title", "start_at", "end_at", "note",
-                        "color_id", "checklist", "alarm_enabled", "alarm_offset_minutes",
+                        "color_id", "checklist",
                     )))
                     put("additionalProperties", false)
                 })
@@ -402,8 +383,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "note",
             "color_id",
             "checklist",
-            "alarm_enabled",
-            "alarm_offset_minutes",
         )
         private val KNOWN_FINISH_REASONS = setOf(
             "stop",
@@ -413,7 +392,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "insufficient_system_resource",
         )
         private val REQUEST_SEQUENCE = AtomicInteger(0)
-        private const val MAX_ALARM_OFFSET_MINUTES = 1440 * 30 // 30 days
 
         private const val SYSTEM_PROMPT =
             "你是 tPlanner 的日程提取助手。你的唯一任务是：根据用户输入的文字，调用 create_schedule 工具。" +
@@ -430,8 +408,6 @@ class DeepSeekAnalysisService(private val apiKey: String) {
             "- note: 提取补充说明。没有则传空字符串\n" +
             "- color_id: 用户指定了颜色就填入，否则默认 0\n" +
             "- checklist: task 类型时提取清单项为数组，其他类型传空数组\n" +
-            "- alarm_enabled: event 类型且开始时间在未来时默认为 true，其他为 false\n" +
-            "- alarm_offset_minutes: 闹铃关闭时为 0；开启时用户指定了提前量就填入，否则默认 0\n" +
             "不要反问用户。不要输出内容（content 可以为空）。直接调用工具。"
     }
 }

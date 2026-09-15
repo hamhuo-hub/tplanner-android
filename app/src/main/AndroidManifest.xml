@@ -7,8 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Android 13+ 通知权限：前台服务 / 数据同步通知需要用户显式授权 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 用户主动设置的任务闹铃；Android 12+ 无授权时会降级为非精确提醒。 -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 开机后恢复手机与手表之间的同步连接。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 经典蓝牙 RFCOMM：GMS 不可用时（国行三星等）手表通信降级通道 -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -103,22 +102,6 @@
             android:name=".WatchScheduleSyncJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
-
-        <receiver
-            android:name=".TaskAlarmReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".AlarmRestoreReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.TIME_SET" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
-            </intent-filter>
-        </receiver>
 
     </application>
 

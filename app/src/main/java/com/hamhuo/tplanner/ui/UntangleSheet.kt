@@ -66,14 +66,6 @@ private fun prettyWhen(startIso: String, endIso: String): String {
     } catch (_: Exception) { "$startIso – $endIso" }
 }
 
-private fun prettyAlarm(enabled: Boolean, offsetMinutes: Int): String = when {
-    !enabled -> "系统闹铃 · 关闭"
-    offsetMinutes == 0 -> "系统闹铃 · 开始时"
-    offsetMinutes % (24 * 60) == 0 -> "系统闹铃 · 提前 ${offsetMinutes / (24 * 60)} 天"
-    offsetMinutes % 60 == 0 -> "系统闹铃 · 提前 ${offsetMinutes / 60} 小时"
-    else -> "系统闹铃 · 提前 $offsetMinutes 分钟"
-}
-
 /**
  * Full-screen schedule-extraction panel. Three states:
  *
@@ -156,7 +148,7 @@ fun UntangleSheet(
             // ── schedule confirmation card ───────────────────────────
             action != null -> {
                 val typeLabel = when (action.type) {
-                    "event" -> "提醒"
+                    "event" -> "事件"
                     "status" -> "状态"
                     else -> "任务"
                 }
@@ -182,11 +174,6 @@ fun UntangleSheet(
                     )
                     Text("$typeLabel · ${prettyWhen(action.startIso, action.endIso)}", color = ACCENT_TEXT, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
                     Text("颜色 ${action.colorId + 1}", color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
-                    Text(
-                        prettyAlarm(action.alarmEnabled, action.alarmOffsetMinutes),
-                        color = if (action.alarmEnabled) ACCENT_TEXT else DIM,
-                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
-                    )
                     if (action.note.isNotBlank()) Text(
                         action.note,
                         color = DIM,

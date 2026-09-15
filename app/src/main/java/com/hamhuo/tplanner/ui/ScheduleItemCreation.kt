@@ -47,7 +47,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,7 +108,7 @@ internal fun typeLabel(type: String): String = when (type) {
 
 internal fun typeIcon(type: String): ImageVector = when (type) {
     "task"   -> Icons.Outlined.CheckCircle
-    "event"  -> Icons.Outlined.Alarm
+    "event"  -> Icons.Outlined.Event
     "status" -> Icons.Filled.Star
     else     -> Icons.Outlined.CheckCircle
 }
@@ -152,7 +152,7 @@ fun CreateItemTypeSheet(onSelect: (String) -> Unit, onDismiss: () -> Unit) {
         Spacer(Modifier.height(12.dp))
 
         AddTypeItem(
-            icon   = Icons.Outlined.Alarm,
+            icon   = Icons.Outlined.Event,
             title  = stringResource(R.string.type_event),
             desc   = stringResource(R.string.desc_event),
             onClick = { onSelect("event") }

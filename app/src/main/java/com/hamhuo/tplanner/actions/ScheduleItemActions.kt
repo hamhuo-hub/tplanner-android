@@ -37,8 +37,6 @@ class ScheduleItemActions(
             note = "",
             deletedAt = 0L,
             updatedAt = now.toEpochMilli(),
-            alarmEnabled = type == "event",
-            alarmOffsetMinutes = 0,
             listId = listId,
         )
         scope.launch {

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Inbox
@@ -34,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,7 +50,6 @@ fun ListPickerSheet(
     listSheetState: androidx.compose.material3.SheetState,
     onSelectView: (String) -> Unit,
     onDismiss: () -> Unit,
-    onNewListRequest: () -> Unit,
     onDeleteList: (String) -> Unit,
     scope: CoroutineScope = rememberCoroutineScope(),
 ) {
@@ -195,29 +192,6 @@ fun ListPickerSheet(
             )
             userLists.map { TaskView.CustomList(it.id, it.name) }.forEach { renderItem(it) }
             Spacer(Modifier.height(8.dp))
-            // 新建清单
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable {
-                    onDismiss()
-                    onNewListRequest()
-                }.padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Box(
-                    modifier = Modifier.size(52.dp)
-                        .background(CONTROL_STRONG, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null,
-                        tint = DIM, modifier = Modifier.size(26.dp))
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(stringResource(R.string.list_new), color = TEXT_PRIMARY,
-                        fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.list_new_description), color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
-                }
-            }
         }
     }
 }

@@ -55,17 +55,11 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -82,20 +76,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,7 +107,6 @@ fun ScheduleItemDetailScreen(
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
     onDelete: ((Boolean) -> Unit) -> Unit,
     onNoteSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
-    onCreateList: (String, (UserList?) -> Unit) -> Unit,
 ) {
     val initialNote = event.note
     var title     by remember { mutableStateOf(event.title) }
@@ -134,8 +122,6 @@ fun ScheduleItemDetailScreen(
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
     var listId    by remember(event.id) { mutableStateOf(event.listId) }
-    var alarmEnabled by remember { mutableStateOf(event.alarmEnabled) }
-    var alarmOffsetMinutes by remember { mutableStateOf(event.alarmOffsetMinutes) }
     var recurrenceType by remember(event.id) {
         mutableStateOf(
             event.extras["recurrenceType"]
@@ -156,7 +142,6 @@ fun ScheduleItemDetailScreen(
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showListPicker by remember { mutableStateOf(false) }
     val listPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showNewListNameSheet by remember { mutableStateOf(false) }
 
     val zone    = remember { APP_ZONE }
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
@@ -202,8 +187,6 @@ fun ScheduleItemDetailScreen(
             note      = if (noteEditorOpen) noteEditorDraft else note,
             colorId   = colorId,
             listId    = listId,
-            alarmEnabled = alarmEnabled,
-            alarmOffsetMinutes = alarmOffsetMinutes,
             updatedAt = updatedAt,
             extras = nextExtras,
         )
@@ -269,7 +252,7 @@ fun ScheduleItemDetailScreen(
             commitResult()
         }
 
-        BackHandler(enabled = !showTypeSheet && !showListPicker && !showNewListNameSheet && !noteEditorOpen) {
+        BackHandler(enabled = !showTypeSheet && !showListPicker && !noteEditorOpen) {
             if (imeVisible) {
                 keyboardController?.hide()
             } else {
@@ -564,97 +547,6 @@ fun ScheduleItemDetailScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
-                    HorizontalDivider(color = BORDER)
-                    Spacer(Modifier.height(20.dp))
-
-                    // 与任务生命周期绑定的系统闹铃：改时间自动重排，完成/删除自动取消。
-                    DetailSectionLabel(stringResource(R.string.section_alarm))
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.alarm_enabled_title),
-                                color = TEXT_PRIMARY,
-                                fontSize = TPlannerTypography.PhoneTaskTitleSp.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                stringResource(R.string.alarm_enabled_description),
-                                color = DIM,
-                                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
-                                lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
-                            )
-                        }
-                        Switch(
-                            checked = alarmEnabled,
-                            onCheckedChange = {
-                                alarmEnabled = it
-                                persistDraft()
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = ON_ACCENT,
-                                checkedTrackColor = GOLD,
-                                uncheckedThumbColor = DIM,
-                                uncheckedTrackColor = CONTROL,
-                            ),
-                        )
-                    }
-                    if (alarmEnabled) {
-                        val offsets = remember(alarmOffsetMinutes) {
-                            (listOf(0, 5, 10, 15, 30, 60) + alarmOffsetMinutes)
-                                .filter { it in 0..MAX_ALARM_OFFSET_MINUTES }
-                                .distinct()
-                                .sorted()
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            offsets.forEach { minutes ->
-                                val selected = minutes == alarmOffsetMinutes
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
-                                        .background(
-                                            if (selected) GOLD else SURFACE_LOW,
-                                            RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp),
-                                        )
-                                        .border(1.dp, if (selected) FOCUS else BORDER, RoundedCornerShape(TPlannerGeometry.RadiusChipDp.dp))
-                                        .clickable {
-                                            alarmOffsetMinutes = minutes
-                                            persistDraft()
-                                        }
-                                        .heightIn(min = Tokens.Platform.Phone.Geometry.ControlMinHeight.dp)
-                                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                                ) {
-                                    Text(
-                                        alarmOffsetLabel(minutes),
-                                        color = if (selected) ON_ACCENT else TEXT_PRIMARY,
-                                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
-                        if (!TaskAlarmScheduler.canScheduleExactAlarms(context)) {
-                            Text(
-                                stringResource(R.string.alarm_exact_permission_hint),
-                                color = ACCENT_TEXT,
-                                fontSize = TPlannerTypography.PhoneCaptionSp.sp,
-                                lineHeight = TPlannerTypography.PhoneCompactLineHeightSp.sp,
-                                modifier = Modifier
-                                    .padding(top = 10.dp)
-                                    .clickable { TaskAlarmScheduler.requestExactAlarmAccess(context) },
-                            )
-                        }
-                    }
-
                     // 清单只对「任务」类型有意义——事件/提醒不是待办事项，不需要子项打勾。
                     if (type == "task") {
                         Spacer(Modifier.height(24.dp))
@@ -787,7 +679,7 @@ fun ScheduleItemDetailScreen(
                 }
             }
 
-            // 清单选择底部面板——只列出自定义清单；没有清单时复用「新建清单」入口
+            // 清单选择底部面板——只列出已有的自定义清单
             if (showListPicker) {
                 ModalBottomSheet(
                     onDismissRequest = { showListPicker = false },
@@ -856,65 +748,8 @@ fun ScheduleItemDetailScreen(
                                 }
                             }
                         }
-                        // 与清单项分隔线隔开，突出「新建清单」操作入口
-                        Box(
-                            Modifier
-                                .padding(horizontal = 20.dp)
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(BORDER),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        // 新建清单——沿用任务页的命名面板流程
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                showListPicker = false
-                                showNewListNameSheet = true
-                            }.padding(horizontal = 20.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier.size(52.dp)
-                                    .background(CONTROL_STRONG, CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null,
-                                    tint = DIM, modifier = Modifier.size(26.dp))
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(
-                                    stringResource(R.string.list_new), color = TEXT_PRIMARY,
-                                    fontSize = TPlannerTypography.PhoneBodySp.sp, fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp,
-                                )
-                                Text(
-                                    stringResource(R.string.list_new_description),
-                                    color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp, letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp,
-                                )
-                            }
-                        }
                     }
                 }
-            }
-
-            if (showNewListNameSheet) {
-                NameInputSheet(
-                    type = "task",
-                    entityLabel = stringResource(R.string.list_entity_name),
-                    initialText = "",
-                    onDraftChange = {},
-                    onCancel = { showNewListNameSheet = false },
-                    onConfirm = { name ->
-                        onCreateList(name.trim()) { created ->
-                            showNewListNameSheet = false
-                            if (created != null) {
-                                listId = created.id
-                                persistDraft()
-                            }
-                        }
-                    },
-                )
             }
 
             if (noteEditorOpen) {
@@ -995,17 +830,6 @@ private fun ListAssignmentChip(
             maxLines = 1,
         )
     }
-}
-
-@Composable
-private fun alarmOffsetLabel(minutes: Int): String = when {
-    minutes == 0 -> stringResource(R.string.alarm_at_start)
-    minutes % (24 * 60) == 0 -> {
-        val days = minutes / (24 * 60)
-        pluralStringResource(R.plurals.alarm_days_before, days, days)
-    }
-    minutes % 60 == 0 -> stringResource(R.string.alarm_hours_before, minutes / 60)
-    else -> stringResource(R.string.alarm_minutes_before, minutes)
 }
 
 @Composable

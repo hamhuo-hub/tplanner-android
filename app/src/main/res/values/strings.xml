@@ -24,9 +24,6 @@
     <string name="list_inbox">收件箱</string>
     <string name="list_today">今天</string>
     <string name="list_none">未归类</string>
-    <string name="list_new">新建清单…</string>
-    <string name="list_entity_name">清单</string>
-    <string name="list_new_description">创建自定义清单</string>
     <string name="task_view_picker_title">筛选与清单</string>
     <string name="task_view_filters">筛选</string>
     <string name="task_view_custom_lists">自定义清单</string>
@@ -37,7 +34,6 @@
     <string name="list_picker_title">选择清单</string>
     <string name="section_time">时间</string>
     <string name="section_recurrence">重复任务</string>
-    <string name="section_alarm">系统闹铃</string>
     <string name="section_checklist">清单</string>
     <string name="section_note">备注</string>
     <string name="section_color">颜色</string>
@@ -63,11 +59,11 @@
 
     <!-- 事件类型 -->
     <string name="type_task">任务</string>
-    <string name="type_event">提醒</string>
+    <string name="type_event">事件</string>
     <string name="type_status">状态</string>
     <string name="type_generic">项目</string>
     <string name="desc_task">创建可勾选的待办任务</string>
-    <string name="desc_event">在指定时间发送提醒</string>
+    <string name="desc_event">安排指定时间的事件</string>
     <string name="desc_status">标记当前状态或动态</string>
     <string name="change_type_title">修改类型</string>
     <string name="current_label">当前</string>
@@ -103,20 +99,6 @@
     <string name="location_locating">正在定位…</string>
     <string name="location_unavailable">未获取位置</string>
     <string name="ai_schedule_extraction">AI 日程提取</string>
-    <string name="schedule_created_with_alarm_toast">已创建日程并设置系统闹铃：%1$s</string>
-    <string name="schedule_created_with_fallback_alarm_toast">已创建日程：%1$s；精确闹铃权限未开启，提醒可能延迟</string>
-    <string name="alarm_enabled_title">开始前提醒我</string>
-    <string name="alarm_enabled_description">修改时间会自动重排，完成或删除后自动取消</string>
-    <string name="alarm_at_start">开始时</string>
-    <string name="alarm_minutes_before">%1$d 分钟前</string>
-    <string name="alarm_hours_before">%1$d 小时前</string>
-    <plurals name="alarm_days_before">
-        <item quantity="other">%1$d 天前</item>
-    </plurals>
-    <string name="alarm_exact_permission_hint">开启"闹钟和提醒"权限可准时触发；点击前往系统设置</string>
-    <string name="alarm_channel_name">任务闹铃</string>
-    <string name="alarm_channel_description">在日程开始前发出闹铃提醒</string>
-    <string name="alarm_notification_starts_at">%1$s 开始</string>
     <!-- 日期格式（DateTimeFormatter 模式） -->
     <string name="date_pattern_full">yyyy年M月d日</string>
     <string name="date_pattern_month_day_weekday">M月d日 · E</string>

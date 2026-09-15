@@ -68,8 +68,8 @@ object WatchTaskOutbox {
                 startEpochMs = draft.startEpochMs,
                 endEpochMs = draft.endEpochMs,
                 colorId = draft.colorId,
-                alarmEnabled = draft.alarmEnabled,
-                alarmOffsetMinutes = draft.alarmOffsetMinutes,
+                alarmEnabled = false,
+                alarmOffsetMinutes = 0,
             ),
             publishedAtEpochMs = now,
         ))
@@ -175,8 +175,6 @@ object WatchTaskOutbox {
                     type = task.type,
                     startEpochMs = task.startEpochMs,
                     endEpochMs = task.endEpochMs,
-                    alarmEnabled = task.alarmEnabled,
-                    alarmOffsetMinutes = task.alarmOffsetMinutes,
                     colorId = task.colorId,
                     updatedAtEpochMs = request.createdAtEpochMs,
                 )

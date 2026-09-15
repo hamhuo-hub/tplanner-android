@@ -23,9 +23,6 @@
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
     <string name="list_none">Unclassified</string>
-    <string name="list_new">New List…</string>
-    <string name="list_entity_name">List</string>
-    <string name="list_new_description">Create a custom list</string>
     <string name="task_view_picker_title">Filters &amp; Lists</string>
     <string name="task_view_filters">Filters</string>
     <string name="task_view_custom_lists">Custom lists</string>
@@ -36,7 +33,6 @@
     <string name="list_picker_title">Choose a List</string>
     <string name="section_time">Time</string>
     <string name="section_recurrence">Repeat task</string>
-    <string name="section_alarm">System alarm</string>
     <string name="section_checklist">Checklist</string>
     <string name="section_note">Note</string>
     <string name="section_color">Color</string>
@@ -62,11 +58,11 @@
 
     <!-- Event types -->
     <string name="type_task">Task</string>
-    <string name="type_event">Reminder</string>
+    <string name="type_event">Event</string>
     <string name="type_status">Status</string>
     <string name="type_generic">Item</string>
     <string name="desc_task">Create a checkable to-do task</string>
-    <string name="desc_event">Send a reminder at a specific time</string>
+    <string name="desc_event">Schedule an event at a specific time</string>
     <string name="desc_status">Mark current status or activity</string>
     <string name="change_type_title">Change Type</string>
     <string name="current_label">Current</string>
@@ -102,21 +98,6 @@
     <string name="location_locating">Locating…</string>
     <string name="location_unavailable">Location unavailable</string>
     <string name="ai_schedule_extraction">AI schedule extraction</string>
-    <string name="schedule_created_with_alarm_toast">Schedule and system alarm created: %1$s</string>
-    <string name="schedule_created_with_fallback_alarm_toast">Schedule created: %1$s. Exact alarm access is off, so the reminder may be delayed.</string>
-    <string name="alarm_enabled_title">Remind me before it starts</string>
-    <string name="alarm_enabled_description">Time changes reschedule it; completion or deletion cancels it</string>
-    <string name="alarm_at_start">At start</string>
-    <string name="alarm_minutes_before">%1$d min before</string>
-    <string name="alarm_hours_before">%1$d hr before</string>
-    <plurals name="alarm_days_before">
-        <item quantity="one">%1$d day before</item>
-        <item quantity="other">%1$d days before</item>
-    </plurals>
-    <string name="alarm_exact_permission_hint">Enable Alarms &amp; reminders for precise delivery; tap to open system settings</string>
-    <string name="alarm_channel_name">Task alarms</string>
-    <string name="alarm_channel_description">Alarm reminders before scheduled items start</string>
-    <string name="alarm_notification_starts_at">Starts at %1$s</string>
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_full">MMMM d, yyyy</string>
     <string name="date_pattern_month_day_weekday">MMM d · E</string>

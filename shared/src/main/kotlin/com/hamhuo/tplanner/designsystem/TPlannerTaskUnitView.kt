@@ -37,7 +37,6 @@ data class TPlannerTaskUnitModel(
     val checklistDone: Int = 0,
     val checklistTotal: Int = 0,
     val statusLabel: String = "",
-    val alarmEnabled: Boolean = false,
     val accessibilityLabel: String = "",
 )
 
@@ -66,7 +65,6 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
         includeFontPadding = false
     }
     private val progress = badgeView()
-    private val alarm = badgeView()
     private val status = badgeView()
     private val supporting = TextView(context).apply {
         typeface = regular
@@ -79,7 +77,6 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         titleRow.addView(progress, wrapContent(startMarginDp = 4))
-        titleRow.addView(alarm, wrapContent(startMarginDp = 4))
         titleRow.addView(status, wrapContent(startMarginDp = 4))
         textColumn.addView(title, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         textColumn.addView(supporting, wrapContent(topMarginDp = 2))
@@ -120,18 +117,17 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
         })
         val supportingSp = if (wear) Wear.Typography.Meta.FontSize else Phone.Typography.Meta.FontSize
         supporting.textSize = supportingSp
-        for (badge in listOf(progress, alarm, status)) badge.textSize = supportingSp
+        for (badge in listOf(progress, status)) badge.textSize = supportingSp
 
         configureLeading(model, wear, onLeadingClick)
         configureProgress(model)
-        configureBadge(alarm, model.alarmEnabled, "\u25C7", Semantic.Color.Warning)
         configureBadge(
             status,
             statusLabel.isNotBlank(),
             statusLabel,
             if (current) Task.CurrentForeground else Semantic.Color.Warning,
         )
-        titleRow.visibility = if (listOf(progress, alarm, status).any { it.visibility == VISIBLE }) VISIBLE else GONE
+        titleRow.visibility = if (listOf(progress, status).any { it.visibility == VISIBLE }) VISIBLE else GONE
         alpha = Semantic.State.NormalOpacity
         background = rippleBackground(
             if (current) Task.CurrentBackground else Task.NormalBackground,
@@ -151,7 +147,7 @@ class TPlannerTaskUnitView(context: Context) : LinearLayout(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         // Keep all status cues reachable when a narrow column or larger font outgrows one line.
-        val badgeWidth = listOf(progress, alarm, status).filter { it.visibility == VISIBLE }.sumOf { badge ->
+        val badgeWidth = listOf(progress, status).filter { it.visibility == VISIBLE }.sumOf { badge ->
             val params = badge.layoutParams as LayoutParams
             kotlin.math.ceil(Layout.getDesiredWidth(badge.text, badge.paint).toDouble()).toInt() +
                 badge.paddingLeft + badge.paddingRight + params.marginStart + params.marginEnd

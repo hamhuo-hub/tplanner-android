@@ -45,6 +45,7 @@ data class ScheduleItem(
     val note: String,
     val deletedAt: Long,
     val updatedAt: Long = 0L,
+    /** Legacy fields retained for database and sync compatibility; no longer schedule alarms. */
     val alarmEnabled: Boolean = false,
     val alarmOffsetMinutes: Int = 0,
     val lat: Double = 0.0,
@@ -54,7 +55,7 @@ data class ScheduleItem(
     val extras: Map<String, Any?> = mapOf("timezone" to APP_TIME_ZONE_ID),
 )
 
-/** Room-backed façade used by UI, alarms, Wear, and synchronization. */
+/** Room-backed façade used by UI, Wear, and synchronization. */
 class ScheduleItemStore(
     context: Context,
     database: TPlannerDatabase = TPlannerDatabase.get(context),
@@ -76,7 +77,6 @@ class ScheduleItemStore(
         // Rotation/onStop may cancel the waiter but cannot cancel an accepted fact mutation.
         DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
             repository.saveOneLocal(event, original = original)
-            reconcileAlarms(repository.getAll())
             scheduleSync()
         }
     }
@@ -89,8 +89,7 @@ class ScheduleItemStore(
         repository.saveWatchCreated(event, requestId).also { result ->
             if (result != WatchTaskCommitResult.ID_CONFLICT) {
                 // A retry also restores side effects if the process died after Room committed
-                // but before alarm reconciliation or the sync worker was scheduled.
-                reconcileAlarms(repository.getAll())
+                // but before the sync worker was scheduled.
                 scheduleSync()
             }
         }
@@ -107,7 +106,6 @@ class ScheduleItemStore(
                         updatedAt = System.currentTimeMillis(),
                     ),
                 )
-                reconcileAlarms(repository.getAll())
                 scheduleSync()
                 true
             } else {
@@ -263,7 +261,6 @@ class ScheduleItemStore(
             DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
                 repository.commitDraft(event, additionalEvents).also { committed ->
                     if (committed is DraftCommitResult.Saved) {
-                        reconcileAlarms(repository.getAll())
                         scheduleSync()
                     }
                 }
@@ -284,7 +281,6 @@ class ScheduleItemStore(
             ) {
                 repository.saveConflictAsCopy(event, conflict).also { savedCopy ->
                     if (savedCopy != null) {
-                        reconcileAlarms(repository.getAll())
                         scheduleSync()
                     }
                 }
@@ -301,10 +297,6 @@ class ScheduleItemStore(
             deletedAt = event.deletedAt,
         )
     } ?: DraftRevision.missing()
-
-    private fun reconcileAlarms(events: List<ScheduleItem>) {
-        runCatching { TaskAlarmScheduler.reconcile(appContext, events) }
-    }
 
     private fun draftQueueKey(eventId: String): String = "$EVENT_QUEUE_PREFIX$eventId"
 
@@ -323,13 +315,6 @@ class ScheduleItemStore(
 
     fun observeUserLists(): Flow<List<UserList>> = userLists.observeAll().map { rows ->
         rows.map { UserList(id = it.id, name = it.name) }
-    }
-
-    suspend fun createUserList(name: String): UserList {
-        val id = java.util.UUID.randomUUID().toString()
-        return DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            repository.createUserList(id, name).also { scheduleSync() }
-        }
     }
 
     suspend fun renameUserList(id: String, name: String): UserList? {
@@ -356,8 +341,6 @@ internal val ISO_MS: DateTimeFormatter =
 
 /** Matches desktop `Date.toISOString()` including a fixed millisecond component. */
 internal fun ScheduleItem.toJson(): JSONObject = EventWireMapper.encodeObject(this)
-
-internal const val MAX_ALARM_OFFSET_MINUTES = 7 * 24 * 60
 
 fun List<ScheduleItem>.forToday(): List<ScheduleItem> = forDate(appToday())
 

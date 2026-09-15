@@ -7,8 +7,6 @@ data class WatchTaskDraft(
     val type: String,
     val startEpochMs: Long,
     val endEpochMs: Long,
-    val alarmEnabled: Boolean,
-    val alarmOffsetMinutes: Int,
     val colorId: Int,
     val updatedAtEpochMs: Long,
 )

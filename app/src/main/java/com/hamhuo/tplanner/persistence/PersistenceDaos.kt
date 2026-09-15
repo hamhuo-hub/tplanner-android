@@ -133,9 +133,6 @@ interface UserListDao {
     @Query("SELECT * FROM user_lists WHERE id = :id")
     suspend fun get(id: String): UserListEntity?
 
-    @Query("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM user_lists")
-    suspend fun nextSortOrder(): Int
-
     @Upsert
     suspend fun upsert(row: UserListEntity)
 

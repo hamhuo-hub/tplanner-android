@@ -20,8 +20,7 @@ object SyncV3Runtime {
 
     private fun create(context: Context): SyncV3Engine = SyncV3Engine(
         context = context,
-        onDisplayedInstalled = { displayedEvents, authoritativeEvents, snapshotVersion, brokerToSequence ->
-            runCatching { TaskAlarmScheduler.reconcile(context, displayedEvents) }
+        onDisplayedInstalled = { _, authoritativeEvents, snapshotVersion, brokerToSequence ->
             WatchScheduleSync.push(
                 context,
                 authoritativeEvents,
