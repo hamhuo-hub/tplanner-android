@@ -5,9 +5,13 @@
     <!-- 手机整理面板打开时按需获取位置；不允许后台定位。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Android 13+ 通知权限：前台服务 / 数据同步通知需要用户显式授权 -->
+    <!-- Android 13+ 通知权限：手表中继前台服务需要用户显式授权 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 开机后恢复手机与手表之间的同步连接。 -->
+    <!-- 系统日历投影：读取用于按归属键幂等查找，写入用于维护本应用自有的本地日历。
+         仅在用户打开该功能后运行时申请；拒绝时投影暂停，其余功能不受影响。 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- 开机后恢复手机与手表之间的中继连接。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 经典蓝牙 RFCOMM：GMS 不可用时（国行三星等）手表通信降级通道 -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -40,68 +44,37 @@
             </intent-filter>
         </activity>
 
-        <!-- One durable DataItem per watch task mutation. This receiver owns persistence and
-             publishes a business-level ACK without bringing the phone UI to the foreground. -->
+        <!-- The watch has its own V5 identity. The phone relays its request bytes unchanged to the
+             server and returns the server's answer; only the server produces business receipts. -->
         <service
-            android:name=".WatchTaskDataLayerService"
+            android:name=".watchv5.WatchV5RelayService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data
                     android:scheme="wear"
                     android:host="*"
-                    android:pathPrefix="/tplanner/task/create/" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/tplanner/task/delete/" />
+                    android:pathPrefix="/tplanner/v5/requests/" />
             </intent-filter>
         </service>
 
-        <!-- Live watch refresh handshake. Success is reported only after the phone responds and
-             the watch returns a receipt for the durably stored snapshot. -->
+        <!-- GMS-free fallback. It carries the same bytes over RFCOMM with the same idempotency
+             rules, so a watch without Google Play services still converges. -->
         <service
-            android:name=".WatchScheduleRefreshService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/tplanner/schedule/refresh" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
-                <data
-                    android:scheme="wear"
-                    android:host="*"
-                    android:pathPrefix="/tplanner/schedule/ack/" />
-            </intent-filter>
-        </service>
-
-        <!-- GMS-free watch -> phone fallback. This service stays in the app process so Room Flow
-             observers see imported tasks without requiring multi-process invalidation. -->
-        <service
-            android:name=".WatchTaskImportService"
+            android:name=".watchv5.WatchV5BluetoothService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice"
             android:stopWithTask="false" />
 
         <receiver
-            android:name=".WatchTaskImportReceiver"
+            android:name=".watchv5.WatchV5BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.bluetooth.adapter.action.STATE_CHANGED" />
             </intent-filter>
         </receiver>
-
-        <service
-            android:name=".WatchScheduleSyncJobService"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
 
     </application>
 

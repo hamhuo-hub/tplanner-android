@@ -86,6 +86,8 @@
     <string name="sync_logs_clear">清空</string>
     <string name="sync_logs_empty">暂无日志</string>
     <string name="sync_server_title">同步服务器</string>
+    <string name="sync_token_hint">访问令牌</string>
+    <string name="sync_reconnect">重置连接</string>
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
@@ -97,4 +99,9 @@
     <string name="date_pattern_full">yyyy年M月d日</string>
     <string name="date_pattern_month_day_weekday">M月d日 · E</string>
     <string name="date_pattern_month_day_time">M月d日 HH:mm</string>
+
+    <!-- 系统日历投影（单向副作用） -->
+    <string name="calendar_projection_permission_denied">未授予日历权限，系统日历投影已暂停；授权后会继续补齐。</string>
+    <string name="calendar_projection_failed">写入系统日历失败，稍后自动重试：%1$s</string>
+    <string name="calendar_projection_unsupported_rule">该重复规则无法写入系统日历，已跳过：%1$s</string>
 </resources>

@@ -72,9 +72,15 @@ class WatchV5RelayService : WearableListenerService() {
                 runCatching {
                     val stream = Tasks.await(Wearable.getDataClient(applicationContext).getFdForAsset(asset), 30, TimeUnit.SECONDS).inputStream
                     val raw = stream.use { input ->
-                        val bytes = input.readBytes(WatchV5Protocol.MAX_BYTES + 1)
-                        require(bytes.size <= WatchV5Protocol.MAX_BYTES)
-                        bytes.toString(Charsets.UTF_8)
+                        val buffer = java.io.ByteArrayOutputStream()
+                        val chunk = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = input.read(chunk)
+                            if (read < 0) break
+                            require(buffer.size() + read <= WatchV5Protocol.MAX_BYTES) { "V5_PACKET_TOO_LARGE" }
+                            buffer.write(chunk, 0, read)
+                        }
+                        buffer.toByteArray().toString(Charsets.UTF_8)
                     }
                     val request = JSONObject(raw)
                     WatchV5Protocol.validateRequest(request)

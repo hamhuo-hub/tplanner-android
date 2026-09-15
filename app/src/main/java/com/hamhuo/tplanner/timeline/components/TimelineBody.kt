@@ -1,0 +1,184 @@
+package com.hamhuo.tplanner.timeline.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import com.hamhuo.tplanner.ScheduleItem
+import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
+import com.hamhuo.tplanner.timeline.ConflictHighlight
+import com.hamhuo.tplanner.timeline.DayPlacement
+import com.hamhuo.tplanner.timeline.TimelineGeometry
+import com.hamhuo.tplanner.timeline.TimelinePlacementMapper
+import com.hamhuo.tplanner.timeline.TimelineState
+import com.hamhuo.tplanner.timeline.timelineWallClockMinutes
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import kotlin.math.roundToInt
+
+@Composable
+internal fun TimelineBody(
+    days: List<LocalDate>,
+    today: LocalDate,
+    now: ZonedDateTime,
+    events: List<ScheduleItem>,
+    placements: List<DayPlacement>,
+    zone: ZoneId,
+    state: TimelineState,
+    hourHeightPx: Float,
+    onEventClick: (ScheduleItem) -> Unit,
+    onAddTaskAt: (Instant) -> Unit,
+    onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                state.updateViewport(
+                    topPx = coordinates.positionInWindow().y,
+                    heightPx = coordinates.size.height.toFloat(),
+                )
+            }
+            .verticalScroll(state.scrollState),
+    ) {
+        val visibleDayCount = days.size.coerceAtLeast(1)
+        val dayWidth =
+            (maxWidth - TimelineGeometry.timeGutterWidth) / visibleDayCount
+        val dayWidthPx = with(density) { dayWidth.toPx() }
+        val timeGutterPx = with(density) { TimelineGeometry.timeGutterWidth.toPx() }
+        val pixelsPerMinute = hourHeightPx / 60f
+        val renderSpecs = remember(placements, dayWidth, zone, state.draggingEventId) {
+            TimelinePlacementMapper.createRenderSpecs(
+                placements = placements,
+                dayWidth = dayWidth,
+                zone = zone,
+                draggingEventId = state.draggingEventId,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TimelineGeometry.hourHeight * 24)
+                .background(Color(TPlannerLightTokens.Semantic.Color.Canvas)),
+        ) {
+            TimelineGrid(
+                days = days,
+                onLongPress = { position ->
+                    if (position.x >= timeGutterPx) {
+                        val dayIndex = (
+                            (position.x - timeGutterPx) / dayWidthPx
+                            ).toInt().coerceIn(days.indices)
+                        val snappedMinutes = (
+                            position.y / pixelsPerMinute / TimelineGeometry.snapMinutes
+                            ).roundToInt() * TimelineGeometry.snapMinutes
+                        val start = days[dayIndex]
+                            .atStartOfDay(zone)
+                            .plusMinutes(
+                                snappedMinutes.coerceIn(
+                                    0,
+                                    24 * 60 - TimelineGeometry.snapMinutes,
+                                ).toLong(),
+                            )
+                            .toInstant()
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onAddTaskAt(start)
+                    }
+                },
+            )
+            state.highlight?.let { highlight ->
+                TimelineConflictHighlight(
+                    highlight = highlight,
+                    days = days,
+                    dayWidth = dayWidth,
+                    zone = zone,
+                )
+            }
+            TimelineItemLayer(
+                renderSpecs = renderSpecs,
+                now = now.toInstant(),
+                highlightedEventIds = state.highlight?.eventIds.orEmpty(),
+                visibleDays = days,
+                zone = zone,
+                dayWidthPx = dayWidthPx,
+                pixelsPerMinute = pixelsPerMinute,
+                scrollState = state.scrollState,
+                viewportTopPx = state.viewportTopPx,
+                viewportHeightPx = state.viewportHeightPx,
+                onEventClick = onEventClick,
+                onConflictClick = { source ->
+                    state.showConflict(
+                        source = source,
+                        visibleEvents = events,
+                        hourHeightPx = hourHeightPx,
+                    )
+                },
+                onDraggingEventChange = state::setDraggingEvent,
+                onEventMove = onEventMove,
+                modifier = Modifier.zIndex(5f),
+            )
+            TimelineNowIndicator(
+                days = days,
+                today = today,
+                now = now,
+                modifier = Modifier.zIndex(200f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimelineConflictHighlight(
+    highlight: ConflictHighlight,
+    days: List<LocalDate>,
+    dayWidth: androidx.compose.ui.unit.Dp,
+    zone: ZoneId,
+) {
+    val dayIndex = days.indexOf(highlight.day)
+    if (dayIndex < 0) return
+
+    val startMinutes = timelineWallClockMinutes(highlight.start, highlight.day, zone)
+    val endMinutes = timelineWallClockMinutes(highlight.end, highlight.day, zone)
+    val top = TimelineGeometry.hourHeight * (startMinutes / 60f)
+    val height = (
+        TimelineGeometry.hourHeight * ((endMinutes - startMinutes) / 60f)
+        ).coerceAtLeast(4.dp)
+    val shape = RoundedCornerShape(TPlannerGeometry.RadiusTimelineCanvasDp.dp)
+
+    Box(
+        Modifier
+            .offset(
+                x = TimelineGeometry.timeGutterWidth + dayWidth * dayIndex + 2.dp,
+                y = top,
+            )
+            .width(dayWidth - 4.dp)
+            .height(height)
+            .background(Color(TPlannerLightTokens.Semantic.Color.ErrorBackground), shape)
+            .border(2.dp, Color(TPlannerLightTokens.Semantic.Color.Error), shape)
+            .zIndex(4f),
+    )
+}

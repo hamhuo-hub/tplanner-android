@@ -10,11 +10,17 @@ import java.util.UUID
 class V5Store(context: Context, namespace: String = "tplanner_v5") {
     private val prefs = context.applicationContext.getSharedPreferences(namespace, Context.MODE_PRIVATE)
     private val lock = locks.getOrPut(namespace) { Any() }
+    private var cachedState: String? = null
+    private var cachedDocuments: List<JcalDocument> = emptyList()
     init { synchronized(lock) { if (!prefs.contains("state")) write(empty()) } }
     private fun empty() = JSONObject().put("deviceId", UUID.randomUUID().toString()).put("nextSequence", 1L)
         .put("revision", 0L).put("records", JSONArray()).put("queue", JSONArray()).put("conflicts", JSONArray())
     private fun read() = JSONObject(prefs.getString("state", null) ?: error("V5 store unavailable"))
-    private fun write(state: JSONObject) { check(prefs.edit().putString("state", state.toString()).commit()) { "无法保存本地数据" } }
+    private fun write(state: JSONObject) {
+        val encoded = state.toString()
+        check(prefs.edit().putString("state", encoded).commit()) { "无法保存本地数据" }
+        cachedState = encoded
+    }
     private fun mutate(block: (JSONObject) -> Unit) = synchronized(lock) { val state = read(); block(state); write(state) }
     val deviceId: String get() = synchronized(lock) { read().getString("deviceId") }
     val revision: Long get() = synchronized(lock) { read().getLong("revision") }
@@ -26,8 +32,18 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
         JSONObject().put("protocolVersion", 5).put("serverId", state.optString("serverId"))
             .put("revision", state.getLong("revision")).put("records", state.getJSONArray("records"))
     } }
+
+    /**
+     * The UI's live view: installed records with every unaccepted local document overlaid.
+     *
+     * The projection is memoized against the raw stored state, so a recomposition or a repeated
+     * read does not re-validate the whole dataset; [write] is the only mutation path and keeps the
+     * cache honest.
+     */
     fun documents(): List<JcalDocument> = synchronized(lock) {
-        val state = read()
+        val raw = prefs.getString("state", null) ?: error("V5 store unavailable")
+        if (raw == cachedState) return cachedDocuments
+        val state = JSONObject(raw)
         val result = linkedMapOf<String, JcalDocument>()
         state.getJSONArray("records").objects().filterNot { it.getBoolean("deleted") }.forEach {
             val doc = JcalDocument(it.getJSONArray("calendar")); result[doc.uid] = doc
@@ -40,7 +56,10 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
         state.optJSONObject("inFlight")?.let(::overlay)
         state.getJSONArray("queue").objects().forEach(::overlay)
         state.getJSONArray("conflicts").objects().forEach { overlay(it.getJSONObject("command")) }
-        result.values.toList()
+        val projected = result.values.toList()
+        cachedState = raw
+        cachedDocuments = projected
+        projected
     }
     fun put(document: JcalDocument) = putAll(listOf(document))
     fun putAll(documents: List<JcalDocument>) = mutate { state ->
@@ -117,7 +136,42 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
             state.remove("inFlight"); state.remove("receipt")
         }
     }
+    /** True when the installed mirror already holds this UID as a live record. */
+    fun isInstalled(uid: String): Boolean = synchronized(lock) {
+        read().getJSONArray("records").objects()
+            .any { !it.getBoolean("deleted") && runCatching { recordUid(it) }.getOrNull() == uid }
+    }
+
+    /** Unaccepted UIDs, most recent local edit first. Used to resume an interrupted editor. */
+    fun pendingUids(): List<String> = synchronized(lock) {
+        val state = read()
+        val ordered = mutableListOf<String>()
+        state.optJSONObject("inFlight")?.let { ordered += commandUid(it) }
+        state.getJSONArray("queue").objects().forEach { ordered += commandUid(it) }
+        state.getJSONArray("conflicts").objects().forEach { ordered += commandUid(it.getJSONObject("command")) }
+        ordered.distinct().reversed()
+    }
+
     fun conflicts(): List<JSONObject> = synchronized(lock) { read().getJSONArray("conflicts").objects() }
+
+    /** True when this UID has a local document that the server has not accepted yet. */
+    fun isPending(uid: String): Boolean = synchronized(lock) {
+        val state = read()
+        state.getJSONArray("queue").objects().any { commandUid(it) == uid } ||
+            state.optJSONObject("inFlight")?.let { commandUid(it) == uid } == true ||
+            state.getJSONArray("conflicts").objects().any { commandUid(it.getJSONObject("command")) == uid }
+    }
+
+    /** Drops local edits for one UID without touching the installed mirror. */
+    fun discard(uid: String) = mutate { state ->
+        val queue = state.getJSONArray("queue")
+        for (i in queue.length() - 1 downTo 0) if (commandUid(queue.getJSONObject(i)) == uid) queue.remove(i)
+        state.optJSONObject("inFlight")?.let { if (commandUid(it) == uid) state.remove("inFlight") }
+        val conflicts = state.getJSONArray("conflicts")
+        for (i in conflicts.length() - 1 downTo 0) {
+            if (commandUid(conflicts.getJSONObject(i).getJSONObject("command")) == uid) conflicts.remove(i)
+        }
+    }
     fun resolveConflict(uid: String, reapply: Boolean) = mutate { state ->
         val conflicts = state.getJSONArray("conflicts")
         for (i in conflicts.length() - 1 downTo 0) {

@@ -1,0 +1,186 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+package com.hamhuo.tplanner
+
+import com.hamhuo.tplanner.ui.components.TPlannerButton
+import com.hamhuo.tplanner.ui.components.TPlannerButtonStyle
+import com.hamhuo.tplanner.ui.components.TPlannerIconButton
+import com.hamhuo.tplanner.ui.components.TPlannerInputFrame
+import androidx.compose.ui.focus.onFocusChanged
+
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
+import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
+import java.util.UUID
+
+@Composable
+internal fun typeLabel(type: String): String = when (type) {
+    "task"   -> stringResource(R.string.type_task)
+    "event"  -> stringResource(R.string.type_event)
+    "status" -> stringResource(R.string.type_status)
+    else     -> stringResource(R.string.type_generic)
+}
+
+internal fun typeIcon(type: String): ImageVector = when (type) {
+    "task"   -> Icons.Outlined.CheckCircle
+    "event"  -> Icons.Outlined.Event
+    "status" -> Icons.Filled.Star
+    else     -> Icons.Outlined.CheckCircle
+}
+
+@Composable
+fun NameInputSheet(
+    type: String,
+    entityLabel: String? = null,
+    initialText: String? = null,
+    onDraftChange: (String) -> Unit = {},
+    onCancel: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val label = entityLabel ?: typeLabel(type)
+    val defaultName = stringResource(R.string.default_name_template, label)
+    val startingText = initialText?.takeIf { it.isNotBlank() } ?: defaultName
+    var text by remember(type) {
+        mutableStateOf(TextFieldValue(startingText, selection = TextRange(0, startingText.length)))
+    }
+    var inputFocused by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onCancel,
+        sheetState       = sheetState,
+        containerColor   = SURFACE,
+        dragHandle       = null,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(top = 28.dp, bottom = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                stringResource(R.string.name_prompt_template, label),
+                color      = TEXT_PRIMARY,
+                fontSize   = TPlannerTypography.PhoneModalTitleSp.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign  = TextAlign.Center
+            )
+            Spacer(Modifier.height(40.dp))
+            TPlannerInputFrame(Modifier.fillMaxWidth(), focused = inputFocused) {
+            BasicTextField(
+                value         = text,
+                onValueChange = {
+                    text = it
+                    onDraftChange(it.text)
+                },
+                textStyle     = TextStyle(
+                    color      = TEXT_PRIMARY,
+                    fontSize   = TPlannerTypography.PhoneDisplaySp.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign  = TextAlign.Center
+                ),
+                cursorBrush = SolidColor(FOCUS),
+                singleLine  = true,
+                modifier    = Modifier.fillMaxWidth().padding(12.dp)
+                    .onFocusChanged { inputFocused = it.isFocused }
+            )
+            }
+            Spacer(Modifier.height(36.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TPlannerButton(label = stringResource(R.string.action_cancel), style = TPlannerButtonStyle.Secondary, onClick = onCancel, modifier = Modifier.weight(1f))
+                TPlannerButton(label = stringResource(R.string.action_create), enabled = text.text.isNotBlank(), modifier = Modifier.weight(1f), onClick = {
+                    val name = text.text.trim()
+                    if (name.isNotEmpty()) onConfirm(name)
+                })
+            }
+        }
+    }
+}
+
+// ── 任务详情页：时间 / 清单 / 备注 / 颜色 ──────────────────────────────────────

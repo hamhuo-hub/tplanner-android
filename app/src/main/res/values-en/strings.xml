@@ -85,6 +85,8 @@
     <string name="sync_logs_clear">Clear</string>
     <string name="sync_logs_empty">No logs yet</string>
     <string name="sync_server_title">Sync Server</string>
+    <string name="sync_token_hint">Access token</string>
+    <string name="sync_reconnect">Reconnect</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
@@ -97,4 +99,9 @@
     <string name="date_pattern_month_day_weekday">MMM d · E</string>
     <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
     <string name="journal_edit_hint">Capture today’s thoughts and ideas…</string>
+
+    <!-- System calendar projection (one-way side effect) -->
+    <string name="calendar_projection_permission_denied">Calendar permission is not granted. System calendar projection is paused and will catch up after access returns.</string>
+    <string name="calendar_projection_failed">Could not write to the system calendar. Retrying later: %1$s</string>
+    <string name="calendar_projection_unsupported_rule">This recurrence rule cannot be written to the system calendar and was skipped: %1$s</string>
 </resources>

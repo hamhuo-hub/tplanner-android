@@ -47,6 +47,11 @@ android {
         versionName = rootProject.extra["appVersionName"] as String
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$deepseekApiKey\"")
+        buildConfigField(
+            "String",
+            "AMAP_API_KEY",
+            "\"${localProperties.getProperty("amap.api.key", "")}\"",
+        )
     }
 
     buildTypes {

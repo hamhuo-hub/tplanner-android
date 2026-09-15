@@ -24,9 +24,16 @@ Tasks use VTODO: `uid`, `summary`, `description`, optional `dtstart` and `due`, 
 `completed`, `rrule`, `rdate`, `exdate`, `recurrence-id`, `location` and `geo`. Do not use
 VEVENT's `dtend` in VTODO. Unscheduled tasks have no invented date. Date-only values stay
 date-only. Timed values are UTC with `Z`, or local values with explicit TZID and matching
-VTIMEZONE. Floating times and numeric UTC offsets are not emitted. Recurrence is a
+VTIMEZONE. Floating times and numeric UTC offsets are not emitted. A TZID must be a resolvable
+IANA zone name; validators resolve it rather than requiring the VTIMEZONE component to be
+present, because TPlanner's own writers emit UTC. Recurrence is a
 standard rule plus exceptions, not a set of separately synchronized generated Tasks.
 Editors may offer a subset of recurrence rules; unsupported rules must remain intact.
+
+Recurring tasks keep one master component per rule. A single instance's state (for example
+"this occurrence is done") is a second component with the same UID and kind carrying
+`recurrence-id`, never a separately generated record; a cancelled instance is an `exdate`
+on the master. Readers expand occurrences locally and must not persist the expansion.
 
 Notes use VJOURNAL with `dtstart` of type `date` and `description`; the daily note UID is
 `journal:YYYY-MM-DD`. They travel through the same record/command pipeline.
@@ -80,10 +87,13 @@ increments it, including deletion. Records are sorted by UID for stable snapshot
 
 The empty calendar above is a shape illustration, not a valid application record.
 `commandId` and device `sequence` are stable across retries. Device sequences start at 1
-and must be contiguous. A duplicate identical command returns the original receipt;
-reusing an identity with different bytes/content is an error. Gaps return HTTP 409 with
-`{"code":"SEQUENCE_GAP","expectedSequence":n}` without accepting later commands.
-Validate the whole batch's envelope/identity/sequence before any writes. Semantic document
+and must be contiguous. A new command sits exactly at the device's expected sequence; a
+command below that value is a replay and is answered from its stored receipt when
+`commandId`, `deviceId`, `sequence` and content fingerprint all match, so retrying an
+already-committed batch returns the original receipts without writing anything. Reusing an
+identity with different bytes/content is an error. Gaps return HTTP 409 with
+`{"code":"SEQUENCE_GAP","expectedSequence":n}` without accepting later commands. Validate
+the whole batch's envelope/identity/sequence before any writes. Semantic document
 errors consume that command's sequence and return a permanent rejected receipt so the
 queue cannot remain blocked behind poison data.
 
@@ -129,6 +139,13 @@ schedule/task wire models. The Watch has its own durable device identity and seq
 The phone is a relay: it must not rewrite Watch identities or claim central acceptance
 before the server commits. Data Layer and RFCOMM carry the same bytes and use the same
 idempotency rules. Watchface positions and list entries are transient reads of jCal.
+
+Every snapshot is the complete live set, so it declares its own scope: absence from a
+snapshot means the record is not there, and an actual deletion always arrives as a
+tombstone. A client must never accept a partial set as if it were complete — nothing may
+filter, cap, truncate or pre-project the records a peer receives. Each device keeps its own
+cursor, pending queue and local display state; sharing the same canonical content does not
+mean sharing runtime state.
 
 System Calendar is a one-way, retryable side effect after canonical local state is saved.
 Android uses a dedicated app-owned local calendar and CalendarContract. Only scheduled
