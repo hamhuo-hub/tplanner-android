@@ -144,8 +144,8 @@ internal object CalendarProjectionEngine {
                 val event = ownedByUid[uid]
                 val mapping = mappings[uid]
                 val applied = mapping?.takeIf { it.calendarId == calendarId }?.appliedRevision
-                if (event != null && event.row.matches(row) && applied == row.revision) {
-                    if (mapping?.eventId != event.eventId) {
+                if (event != null && mapping != null && event.row.matches(row) && applied == row.revision) {
+                    if (mapping.eventId != event.eventId) {
                         // The provider row is right but was never recorded: adopt it, do not insert.
                         mappings[uid] = ProjectionMapping(uid, calendarId, event.eventId, row.revision, null)
                     }
