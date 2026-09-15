@@ -68,14 +68,6 @@ class SyncV3CommandRepository(
         )
     }
 
-    fun enqueueListRename(id: String, title: String) {
-        enqueue(listOf(SyncV3CommandPlanner.listRename(id, title)))
-    }
-
-    fun enqueueListDelete(id: String) {
-        enqueue(listOf(SyncV3CommandPlanner.listDelete(id)))
-    }
-
     /** Entry point for the phone-side Watch bridge; duplicate commandId is a durable NOOP. */
     suspend fun enqueueExternal(
         commandId: String,

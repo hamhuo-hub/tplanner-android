@@ -58,7 +58,7 @@ enum class PhoneTabBarPresentation {
  * Temporary primary navigation for phones.
  *
  * Destination labels intentionally live here, so the second destination remains
- * "Inbox" instead of changing with its currently selected child list.
+ * "Inbox" instead of changing with its currently selected task filter.
  */
 @Composable
 fun PhoneTabBar(

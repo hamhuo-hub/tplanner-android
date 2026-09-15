@@ -22,7 +22,7 @@ internal fun MainLayout(
     isPhone: Boolean,
     phoneTab: Int,
     onPhoneTabSelected: (Int) -> Unit,
-    onListSheetRequest: () -> Unit,
+    onViewSheetRequest: () -> Unit,
     chromeHidden: Boolean,
     chromeMode: ChromeMode,
     onNavigationRequested: () -> Unit,
@@ -55,7 +55,7 @@ internal fun MainLayout(
             PhoneTabBar(
                 selected = phoneTab,
                 onSelect = { selected ->
-                    if (selected == 1 && phoneTab == 1) onListSheetRequest()
+                    if (selected == 1 && phoneTab == 1) onViewSheetRequest()
                     onPhoneTabSelected(selected)
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),

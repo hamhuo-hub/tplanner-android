@@ -20,7 +20,6 @@ class ScheduleItemActions(
 ) {
     fun beginNewItem(
         type: String,
-        listId: String = "",
         initialStart: Instant = Instant.now(),
         onPending: (ScheduleItem) -> Unit,
     ) {
@@ -37,7 +36,6 @@ class ScheduleItemActions(
             note = "",
             deletedAt = 0L,
             updatedAt = now.toEpochMilli(),
-            listId = listId,
         )
         scope.launch {
             try {

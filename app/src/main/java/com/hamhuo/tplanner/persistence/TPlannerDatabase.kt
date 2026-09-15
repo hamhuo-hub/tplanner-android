@@ -32,7 +32,6 @@ abstract class TPlannerDatabase : RoomDatabase() {
     abstract fun draftDao(): DraftDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun migrationDao(): MigrationDao
-    abstract fun userListDao(): UserListDao
     abstract fun syncV3Dao(): SyncV3Dao
 
     companion object {
@@ -179,4 +178,3 @@ abstract class TPlannerDatabase : RoomDatabase() {
         }
     }
 }
-

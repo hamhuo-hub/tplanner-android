@@ -3,7 +3,6 @@ package com.hamhuo.tplanner.persistence
 import androidx.room.withTransaction
 import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.ScheduleItem
-import com.hamhuo.tplanner.UserList
 import com.hamhuo.tplanner.planRecurringTaskChange
 import com.hamhuo.tplanner.withoutRecurringTaskSeries
 import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
@@ -276,39 +275,6 @@ class RoomEventRepository(
             changed = true
         }
         return changed
-    }
-
-    /** Deletes a custom-list definition and atomically returns its active items to no list. */
-    suspend fun deleteUserListAndUnassignItems(
-        listId: String,
-        now: Long = System.currentTimeMillis(),
-    ): Int = db.withTransaction {
-        var changedItems = 0
-        db.eventDao().getAll().forEach { row ->
-            val event = PersistenceMapper.eventToDomain(row)
-            if (event.deletedAt != 0L || event.listId != listId) return@forEach
-
-            val unassigned = event.copy(
-                listId = "",
-                updatedAt = maxOf(now, event.updatedAt + 1L),
-            )
-            db.eventDao().upsert(PersistenceMapper.eventToEntity(unassigned, row.sortIndex))
-            commands.enqueueTaskChange(event, unassigned)
-            changedItems++
-        }
-        db.userListDao().delete(listId)
-        commands.enqueueListDelete(listId)
-        changedItems
-    }
-
-    suspend fun renameUserList(id: String, name: String): UserList? = db.withTransaction {
-        val current = db.userListDao().get(id) ?: return@withTransaction null
-        val normalized = name.trim()
-        if (current.name != normalized) {
-            db.userListDao().upsert(current.copy(name = normalized))
-            commands.enqueueListRename(id, normalized)
-        }
-        UserList(id = id, name = normalized)
     }
 
     private companion object {

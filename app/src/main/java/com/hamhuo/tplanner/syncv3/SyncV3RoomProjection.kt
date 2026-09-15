@@ -4,7 +4,6 @@ import android.content.Context
 import com.hamhuo.tplanner.CheckItem
 import com.hamhuo.tplanner.JournalEntry
 import com.hamhuo.tplanner.ScheduleItem
-import com.hamhuo.tplanner.UserList
 import com.hamhuo.tplanner.persistence.JournalEntity
 import com.hamhuo.tplanner.persistence.PersistenceMapper
 import com.hamhuo.tplanner.persistence.ScheduleItemEntity
@@ -16,9 +15,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
 
+/** Compatibility metadata used only when installing or recovering server snapshots. */
+data class SyncedListDefinition(val id: String, val name: String)
+
 data class DisplayedStateProjection(
     val events: List<ScheduleItem>,
-    val lists: List<UserList>,
+    val lists: List<SyncedListDefinition>,
     val journals: Map<String, JournalEntry>,
     val json: JSONObject,
 )
@@ -179,7 +181,7 @@ object SyncV3ProjectionCodec {
             source.keys().forEach { id ->
                 val list = source.getJSONObject(id)
                 if (list.optString("lifecycle", "active") != "deleted") {
-                    add(UserList(id = id, name = list.optString("title", "")))
+                    add(SyncedListDefinition(id = id, name = list.optString("title", "")))
                 }
             }
         }

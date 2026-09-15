@@ -19,7 +19,6 @@ import com.hamhuo.tplanner.persistence.WatchTaskCommitResult
 import com.hamhuo.tplanner.persistence.decideDraftRecovery
 import com.hamhuo.tplanner.syncv3.SyncV3CommandRepository
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
@@ -27,11 +26,6 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 data class CheckItem(val id: String, val text: String, val completed: Boolean)
-
-data class UserList(
-    val id: String,
-    val name: String,
-)
 
 data class ScheduleItem(
     val id: String,
@@ -50,6 +44,7 @@ data class ScheduleItem(
     val alarmOffsetMinutes: Int = 0,
     val lat: Double = 0.0,
     val lng: Double = 0.0,
+    /** Stored list identifier retained for sync compatibility; not used as a task view. */
     val listId: String = "",
     /** Unknown desktop/server fields must round-trip unchanged. */
     val extras: Map<String, Any?> = mapOf("timezone" to APP_TIME_ZONE_ID),
@@ -307,27 +302,6 @@ class ScheduleItemStore(
         // SyncV3ForegroundPump 在泵结束后 finally 里 enqueue,不与热路径抢锁。
         SyncFeedbackBus.publish(SyncFeedbackEvent.Sending)
         SyncV3ForegroundPump.request(appContext)
-    }
-
-    // ── UserList CRUD ──────────────────────────────────────────────────────
-
-    private val userLists = database.userListDao()
-
-    fun observeUserLists(): Flow<List<UserList>> = userLists.observeAll().map { rows ->
-        rows.map { UserList(id = it.id, name = it.name) }
-    }
-
-    suspend fun renameUserList(id: String, name: String): UserList? {
-        return DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            repository.renameUserList(id, name)?.also { scheduleSync() }
-        }
-    }
-
-    suspend fun deleteUserList(id: String) {
-        DurableWriteQueue.submitAndAwait(EVENT_FACT_QUEUE_KEY) {
-            repository.deleteUserListAndUnassignItems(id)
-            scheduleSync()
-        }
     }
 
     private companion object {

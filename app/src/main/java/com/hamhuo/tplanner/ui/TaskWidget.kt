@@ -40,7 +40,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -54,7 +53,6 @@ import com.hamhuo.tplanner.ui.components.TPlannerTaskUnit
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 import androidx.compose.foundation.layout.heightIn
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -114,8 +112,7 @@ fun TaskWidget(
         val upcoming = mutableListOf<ScheduleItem>()
         val past     = mutableListOf<ScheduleItem>()
         val done     = mutableListOf<ScheduleItem>()
-        // Every group is derived from the selected view. A custom list must never receive
-        // overdue items from the global task dataset.
+        // Group only the items included in the selected filter.
         source.forEach { e ->
             if (e.type == "task" && e.completed) { done += e; return@forEach }
             when (taskStatus(e, now)) {
@@ -125,7 +122,7 @@ fun TaskWidget(
                 else   -> upcoming += e
             }
         }
-        // Today: Now → Later → Past → Done. Other views: Past → Now → Later → Done.
+        // Today: Now → Later → Past → Done. Inbox: Past → Now → Later → Done.
         if (isToday) {
             mapOf(groupNowLabel to current, groupLaterLabel to upcoming, groupPastLabel to past, groupDoneLabel to done)
         } else {
@@ -141,7 +138,6 @@ fun TaskWidget(
     val viewLabel = when (view) {
         is TaskView.Today -> stringResource(R.string.list_today)
         is TaskView.Inbox -> stringResource(R.string.list_inbox)
-        is TaskView.CustomList -> view.name
     }
 
     val taskTotal = source.count { it.type == "task" }

@@ -381,15 +381,11 @@ fun MainScreen(
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
     var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Today.key) }
-    var userLists by remember { mutableStateOf(emptyList<UserList>()) }
-    LaunchedEffect(eventStore) {
-        eventStore.observeUserLists().collect { userLists = it }
-    }
-    val selectedView = TaskView.fromKey(selectedViewKey, userLists)
-    var showListSheet by remember { mutableStateOf(false) }
+    val selectedView = TaskView.fromKey(selectedViewKey)
+    var showViewSheet by remember { mutableStateOf(false) }
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
     var timelineModalVisible by remember { mutableStateOf(false) }
-    val listSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val viewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // ── Schedule extraction sheet ───────────────────────────────────────
     var showScheduleSheet by remember { mutableStateOf(false) }
     var openingScheduleSheet by remember { mutableStateOf(false) }
@@ -585,13 +581,12 @@ fun MainScreen(
     }
 
     fun beginNewItem(type: String) {
-        eventActions.beginNewItem(type, selectedView.listIdForNewItem()) { pendingNewItem = it }
+        eventActions.beginNewItem(type) { pendingNewItem = it }
     }
 
     fun beginTaskAt(start: Instant) {
         eventActions.beginNewItem(
             type = "task",
-            listId = selectedView.listIdForNewItem(),
             initialStart = start,
         ) { pendingNewItem = it }
     }
@@ -605,7 +600,7 @@ fun MainScreen(
         )
     }
     val chromeHidden = showScheduleSheet ||
-        showListSheet ||
+        showViewSheet ||
         taskWidgetModalVisible ||
         timelineModalVisible ||
         pendingNewItem != null ||
@@ -636,7 +631,7 @@ fun MainScreen(
                 eventActions.softDelete(events, eventId) { events = it }
             },
             onItemClick = ::openItem,
-            onViewPickerClick = { showListSheet = true },
+            onViewPickerClick = { showViewSheet = true },
             onTypeChange = { eventId, newType ->
                 eventActions.changeType(events, eventId, newType) { events = it }
             },
@@ -823,7 +818,7 @@ fun MainScreen(
                         primaryNavigationGeneration++
                         chromeMode = ChromeMode.PrimaryNavigation
                     },
-                    onListSheetRequest = { showListSheet = true },
+                    onViewSheetRequest = { showViewSheet = true },
                     chromeHidden = chromeHidden,
                     chromeMode = chromeMode,
                     onNavigationRequested = {
@@ -850,20 +845,13 @@ fun MainScreen(
         }
     }
 
-    // ── List picker ────────────────────────────────────────────────────
-    if (showListSheet) {
-        ListPickerSheet(
+    // ── Task view picker ───────────────────────────────────────────────
+    if (showViewSheet) {
+        TaskViewPickerSheet(
             selectedView = selectedView,
-            userLists = userLists,
-            listSheetState = listSheetState,
-            onSelectView = { key -> selectedViewKey = key; showListSheet = false },
-            onDismiss = { showListSheet = false },
-            onDeleteList = { id ->
-                scope.launch {
-                    eventStore.deleteUserList(id)
-                    if (selectedViewKey == id) selectedViewKey = TaskView.Inbox.key
-                }
-            },
+            sheetState = viewSheetState,
+            onSelectView = { key -> selectedViewKey = key; showViewSheet = false },
+            onDismiss = { showViewSheet = false },
         )
     }
 
@@ -911,7 +899,6 @@ fun MainScreen(
     editingItem?.let { ev ->
         ScheduleItemDetailScreen(
             event = ev,
-            userLists = userLists,
             onDraftChange = { snapshot ->
                 eventStore.enqueueEventDraft(snapshot, EventEditStage.DETAIL)
             },

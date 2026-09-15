@@ -121,21 +121,3 @@ interface MigrationDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertMarker(row: MigrationMarkerEntity)
 }
-
-@Dao
-interface UserListDao {
-    @Query("SELECT * FROM user_lists ORDER BY sort_order")
-    fun observeAll(): Flow<List<UserListEntity>>
-
-    @Query("SELECT * FROM user_lists ORDER BY sort_order")
-    suspend fun getAll(): List<UserListEntity>
-
-    @Query("SELECT * FROM user_lists WHERE id = :id")
-    suspend fun get(id: String): UserListEntity?
-
-    @Upsert
-    suspend fun upsert(row: UserListEntity)
-
-    @Query("DELETE FROM user_lists WHERE id = :id")
-    suspend fun delete(id: String): Int
-}

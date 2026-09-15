@@ -251,11 +251,6 @@ object SyncV3CommandPlanner {
         "color" to null,
     )
 
-    fun listRename(id: String, title: String): SyncCommandDraft =
-        draft(SyncCommandType.LIST_RENAME, id, "title" to title)
-
-    fun listDelete(id: String): SyncCommandDraft = draft(SyncCommandType.LIST_DELETE, id)
-
     fun journalSetText(date: String, text: String, ifMissing: Boolean = false): SyncCommandDraft =
         draft(
             SyncCommandType.JOURNAL_SET_TEXT,

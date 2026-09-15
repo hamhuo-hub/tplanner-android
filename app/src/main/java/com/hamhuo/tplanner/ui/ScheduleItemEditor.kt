@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -51,9 +50,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -102,7 +99,6 @@ import java.util.UUID
 @Composable
 fun ScheduleItemDetailScreen(
     event: ScheduleItem,
-    userLists: List<UserList>,
     onDraftChange: (ScheduleItem) -> Unit,
     onSave: (ScheduleItem, (Boolean) -> Unit) -> Unit,
     onDelete: ((Boolean) -> Unit) -> Unit,
@@ -121,7 +117,6 @@ fun ScheduleItemDetailScreen(
     var noteEditorCloseRequested by remember { mutableStateOf(false) }
     var colorId   by remember { mutableStateOf(event.colorId) }
     var type      by remember { mutableStateOf(event.type) }
-    var listId    by remember(event.id) { mutableStateOf(event.listId) }
     var recurrenceType by remember(event.id) {
         mutableStateOf(
             event.extras["recurrenceType"]
@@ -140,8 +135,6 @@ fun ScheduleItemDetailScreen(
 
     var showTypeSheet by remember { mutableStateOf(false) }
     val typeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showListPicker by remember { mutableStateOf(false) }
-    val listPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val zone    = remember { APP_ZONE }
     val dateTimePattern = stringResource(R.string.date_pattern_month_day_time)
@@ -186,7 +179,6 @@ fun ScheduleItemDetailScreen(
             completed = if (type == "task") completed else false,
             note      = if (noteEditorOpen) noteEditorDraft else note,
             colorId   = colorId,
-            listId    = listId,
             updatedAt = updatedAt,
             extras = nextExtras,
         )
@@ -252,7 +244,7 @@ fun ScheduleItemDetailScreen(
             commitResult()
         }
 
-        BackHandler(enabled = !showTypeSheet && !showListPicker && !noteEditorOpen) {
+        BackHandler(enabled = !showTypeSheet && !noteEditorOpen) {
             if (imeVisible) {
                 keyboardController?.hide()
             } else {
@@ -394,45 +386,6 @@ fun ScheduleItemDetailScreen(
                     HorizontalDivider(color = BORDER)
                     Spacer(Modifier.height(20.dp))
 
-                    // Empty listId means unclassified. Inbox and Today are filters, not lists.
-                    DetailSectionLabel(stringResource(R.string.section_list))
-                    Spacer(Modifier.height(10.dp))
-                    val currentList = userLists.firstOrNull { it.id == listId }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
-                            .background(SURFACE_LOW, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
-                            .border(1.dp, BORDER, RoundedCornerShape(TPlannerGeometry.RadiusPanelDp.dp))
-                            .clickable {
-                                renaming = false
-                                focusManager.clearFocus(force = true)
-                                keyboardController?.hide()
-                                showTypeSheet = false
-                                showListPicker = true
-                            }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            currentList?.name ?: stringResource(R.string.list_none),
-                            color = if (currentList != null) TEXT_PRIMARY else DIM,
-                            fontSize = TPlannerTypography.PhoneSupportingSp.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Icon(
-                            Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            tint = DIM,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-                    HorizontalDivider(color = BORDER)
-                    Spacer(Modifier.height(20.dp))
-
                     // 时间
                     DetailSectionLabel(stringResource(R.string.section_time))
                     Spacer(Modifier.height(10.dp))
@@ -478,7 +431,7 @@ fun ScheduleItemDetailScreen(
                                 "weekly" to stringResource(R.string.recurrence_weekly),
                                 "monthly" to stringResource(R.string.recurrence_monthly),
                             ).forEach { (value, label) ->
-                                ListAssignmentChip(
+                                RecurrenceOptionChip(
                                     label = label,
                                     selected = recurrenceType == value,
                                     onClick = {
@@ -679,79 +632,6 @@ fun ScheduleItemDetailScreen(
                 }
             }
 
-            // 清单选择底部面板——只列出已有的自定义清单
-            if (showListPicker) {
-                ModalBottomSheet(
-                    onDismissRequest = { showListPicker = false },
-                    sheetState       = listPickerSheetState,
-                    containerColor   = SURFACE,
-                    dragHandle       = null,
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
-                    ) {
-                        // 顶部居中的拖拽把手（统一弹窗样式）
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Box(
-                                Modifier
-                                    .width(36.dp)
-                                    .height(4.dp)
-                                    .background(DIVIDER_STRONG, RoundedCornerShape(TPlannerGeometry.RadiusSmallDp.dp)),
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(R.string.list_picker_title),
-                                color = TEXT_PRIMARY, fontSize = TPlannerTypography.PhoneSectionSp.sp, fontWeight = FontWeight.SemiBold,
-                                letterSpacing = TPlannerTypography.PhoneLetterSpacingSp.sp,
-                            )
-                            TPlannerIconButton(Icons.Default.Close, "Close", { showListPicker = false })
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        userLists.forEach { list ->
-                            val selected = list.id == listId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (!selected) {
-                                            listId = list.id
-                                            persistDraft()
-                                        }
-                                        showListPicker = false
-                                    }
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    list.name,
-                                    color = if (selected) ACCENT_TEXT else TEXT_PRIMARY,
-                                    fontSize = TPlannerTypography.PhoneBodySp.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (selected) {
-                                    Icon(
-                                        Icons.Default.Check, contentDescription = null,
-                                        tint = ACCENT_TEXT, modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             if (noteEditorOpen) {
                 Box(
                     modifier = Modifier
@@ -805,7 +685,7 @@ private fun DetailSectionLabel(text: String) {
 }
 
 @Composable
-private fun ListAssignmentChip(
+private fun RecurrenceOptionChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
