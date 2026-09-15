@@ -1,4 +1,11 @@
 import java.io.ByteArrayOutputStream
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 
 buildscript {
     dependencies {
@@ -11,6 +18,28 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
+}
+
+/** Both Android apps package the editable root artwork, without checked-in bitmap copies. */
+abstract class GenerateLauncherResources : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceIcon: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val target = outputDirectory.file("mipmap-nodpi/tplanner_launcher_artwork.png").get().asFile
+        target.parentFile.mkdirs()
+        sourceIcon.get().asFile.copyTo(target, overwrite = true)
+    }
+}
+
+tasks.register<GenerateLauncherResources>("generateLauncherResources") {
+    sourceIcon.set(layout.projectDirectory.file("icon.png"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/launcher-res"))
 }
 
 // ── 版本管理：git tag 是唯一版本源 ─────────────────────────────────────────

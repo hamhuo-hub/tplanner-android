@@ -81,6 +81,9 @@ android {
     }
 
     sourceSets {
+        getByName("main").res.directories.add(
+            rootProject.layout.buildDirectory.dir("generated/launcher-res").get().asFile.absolutePath,
+        )
         getByName("main").res.directories.add(rootProject.file("shared/src/main/res").absolutePath)
         getByName("main").assets.directories.add(rootProject.file("shared/src/main/assets").absolutePath)
         getByName("main").kotlin.directories.add(
@@ -88,6 +91,10 @@ android {
         )
     }
 
+}
+
+tasks.named("preBuild") {
+    dependsOn(rootProject.tasks.named("generateLauncherResources"))
 }
 
 dependencies {

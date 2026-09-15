@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- anydpi takes precedence over the legacy density-specific foreground PNGs on both apps. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="10%">
+    <bitmap
+        android:src="@mipmap/tplanner_launcher_artwork"
+        android:gravity="fill"
+        android:filter="true" />
+</inset>

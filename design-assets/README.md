@@ -40,14 +40,19 @@ objects, and verifies launcher/preview metadata in addition to the asset checks 
 
 ## Launcher and picker assets
 
-The launcher artwork under
-`wear/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png` is the canonical highest-density
-source currently shipped by Android. The lower-density Wear files and the matching Phone files
-are generated mirrors; they must remain byte-identical at each density. Both adaptive icons use
-the shared `#1B1B1D` background and the foreground resource directly.
+The repository-root `icon.png` is the editable launcher artwork for both Phone and Wear.
+The root `generateLauncherResources` Gradle task copies it unchanged into
+`build/generated/launcher-res/mipmap-nodpi/tplanner_launcher_artwork.png`; both modules include
+that generated resource directory and depend on the task before building. Changing `icon.png`
+therefore updates the packaged launcher on the next build, including release builds.
 
-Phone/Wear foregrounds must be byte-identical at every density; the checker also requires both
-manifests, adaptive icons, and launcher backgrounds to reference the canonical pair. The old
+Both adaptive icons keep the `#1B1B1D` background and resolve `@mipmap/ic_launcher_foreground`
+through `shared/src/main/res/mipmap-anydpi-v26/ic_launcher_foreground.xml`. That shared wrapper
+fits the bitmap into the foreground bounds with 10% insets for launcher masks. Android's `anydpi`
+selection takes precedence over the old density-specific PNGs, which remain only as legacy assets.
+The existing brand check still requires those legacy Phone/Wear pairs to be byte-identical and
+checks the manifest/adaptive icon/background references; they are no longer the artwork source.
+The old
 `app/src/main/res/mipmap-nodpi/ic_launcher_full.png` remains only as a legacy non-adaptive source
 until the minimum Android version no longer needs migration evidence; it is not referenced by the
 current adaptive icon.
