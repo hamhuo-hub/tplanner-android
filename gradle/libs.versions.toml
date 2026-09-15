@@ -7,7 +7,9 @@ lifecycle = "2.11.0"
 composeBom = "2026.09.00"
 appcompat = "1.8.0"
 activity = "1.13.0"
-wearWatchface = "1.3.0"
+# Latest published stable is 1.2.1; 1.3.0 was never released (only 1.3.0-alphaNN exist),
+# so the previous pin could not resolve at all and :wear never built.
+wearWatchface = "1.2.1"
 wearCompose = "1.6.2"
 playServicesWearable = "20.0.1"
 room = "2.8.5"

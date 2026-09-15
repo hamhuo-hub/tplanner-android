@@ -1,5 +1,6 @@
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.calendar.TPlannerCalendarProjection
 import com.hamhuo.tplanner.ui.components.TPlannerButton
 import com.hamhuo.tplanner.ui.components.TPlannerIconButton
 import com.hamhuo.tplanner.ui.components.TPlannerInputFrame
@@ -15,6 +16,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +44,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -151,6 +155,10 @@ fun SyncSettingsPanel(
             if (syncMsg.isNotBlank()) {
                 Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.SansSerif)
             }
+
+            // 系统日历:一次性把排期任务投影到应用自有的本地日历。开关只控制这个
+            // 单向消费者,失败不会影响任务保存、同步或手表。
+            CalendarProjectionToggle()
 
             // 同步日志入口(诊断)
             TextButton(onClick = onOpenLogs) {
@@ -515,5 +523,53 @@ fun MarkdownField(
                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = ACCENT_TEXT, modifier = Modifier.size(18.dp))
             }
         }
+    }
+}
+
+/**
+ * Turns the one-way system-calendar consumer on or off.
+ *
+ * The switch never participates in synchronization: it only asks for the provider permissions and
+ * records the user's intent. Denial leaves task saving, server sync and watch acknowledgement
+ * untouched; a later grant replays whatever is still queued.
+ */
+@Composable
+fun CalendarProjectionToggle() {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(TPlannerCalendarProjection.isEnabled(context)) }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val granted = result.isNotEmpty() && result.values.all { it }
+        TPlannerCalendarProjection.setEnabled(context, granted)
+        enabled = granted
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.calendar_projection_title),
+            color = DIM,
+            fontSize = TPlannerTypography.PhoneMicroSp.sp,
+        )
+        Switch(
+            checked = enabled,
+            onCheckedChange = { next ->
+                when {
+                    !next -> {
+                        TPlannerCalendarProjection.setEnabled(context, false)
+                        enabled = false
+                    }
+                    TPlannerCalendarProjection.permissionsGranted(context) -> {
+                        TPlannerCalendarProjection.setEnabled(context, true)
+                        enabled = true
+                    }
+                    else -> launcher.launch(TPlannerCalendarProjection.requiredPermissions())
+                }
+            },
+        )
     }
 }
