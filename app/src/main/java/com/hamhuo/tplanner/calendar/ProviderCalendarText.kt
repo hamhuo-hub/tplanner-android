@@ -149,3 +149,51 @@ internal fun normalizedRule(rule: String?): String =
         ?.sorted()
         ?.joinToString(";")
         .orEmpty()
+
+private val BASIC_UTC = java.time.format.DateTimeFormatter
+    .ofPattern("yyyyMMdd'T'HHmmss'Z'")
+    .withZone(java.time.ZoneOffset.UTC)
+
+/**
+ * Provider `EXDATE` text for the occurrences this record cancels.
+ *
+ * A cancelled occurrence is a standard recurrence fact, so the system calendar has to skip it as
+ * well: otherwise TPlanner and the calendar it feeds would disagree about which days the task
+ * happens. Values are written in RFC 5545 basic UTC form, separated by `;`.
+ */
+internal fun providerExdate(document: JcalDocument): String? {
+    val components = document.calendar.getJSONArray(2)
+    val master = (0 until components.length())
+        .map { components.getJSONArray(it) }
+        .firstOrNull {
+            it.getString(0) in setOf("vtodo", "vjournal") &&
+                JcalDocument.property(it, "recurrence-id") == null
+        } ?: return null
+    val props = master.getJSONArray(1)
+    val instants = mutableListOf<java.time.Instant>()
+    for (index in 0 until props.length()) {
+        val prop = props.getJSONArray(index)
+        if (prop.optString(0) != "exdate") continue
+        for (slot in 3 until prop.length()) {
+            // Reuse the canonical parser so a TZID-qualified value resolves exactly as it does
+            // everywhere else; anything unreadable is skipped rather than guessed at.
+            val single = org.json.JSONArray()
+                .put(prop.getString(0))
+                .put(prop.optJSONObject(1) ?: JSONObject())
+                .put(prop.getString(2))
+                .put(prop.getString(slot))
+            runCatching { JcalDocument.instant(single) }.getOrNull()?.let(instants::add)
+        }
+    }
+    if (instants.isEmpty()) return null
+    return instants.distinct().sorted().joinToString(";") { BASIC_UTC.format(it) }
+}
+
+/** EXDATE order is not semantic, so the comparison sorts the instants before comparing. */
+internal fun normalizedExdate(text: String?): String =
+    text?.split(';')
+        ?.map { it.trim().uppercase() }
+        ?.filter(String::isNotEmpty)
+        ?.sorted()
+        ?.joinToString(";")
+        .orEmpty()

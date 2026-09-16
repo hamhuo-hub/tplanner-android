@@ -45,6 +45,7 @@ internal class CalendarProviderGateway(private val context: Context) {
             Events.RRULE,
             Events.ALL_DAY,
             Events.STATUS,
+            Events.EXDATE,
         )
     }
 
@@ -98,6 +99,7 @@ internal class CalendarProviderGateway(private val context: Context) {
                         endMillis = if (cursor.isNull(6)) null else cursor.getLong(6),
                         durationText = if (cursor.isNull(7)) null else cursor.getString(7),
                         rrule = if (cursor.isNull(8)) null else cursor.getString(8),
+                        exdate = if (cursor.isNull(11)) null else cursor.getString(11),
                         status = if (cursor.isNull(10)) Events.STATUS_CONFIRMED else cursor.getInt(10),
                     ),
                 )

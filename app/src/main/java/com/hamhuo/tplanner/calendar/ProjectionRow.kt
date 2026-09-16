@@ -20,6 +20,8 @@ internal data class ProjectionRow(
     val endMillis: Long?,
     val durationSeconds: Long?,
     val rrule: String?,
+    /** Occurrences this record cancels, in provider `EXDATE` form; null when none are cancelled. */
+    val exdate: String? = null,
     val status: Int = Events.STATUS_CONFIRMED,
 ) {
     val recurring: Boolean get() = rrule != null
@@ -29,7 +31,8 @@ internal data class ProjectionRow(
         get() = digest(
             "uid=$uid\u0000title=$title\u0000description=$description\u0000allDay=$allDay" +
                 "\u0000start=$startMillis\u0000end=${endMillis ?: -1L}" +
-                "\u0000duration=${durationSeconds ?: -1L}\u0000rrule=${rrule.orEmpty()}",
+                "\u0000duration=${durationSeconds ?: -1L}\u0000rrule=${rrule.orEmpty()}" +
+                "\u0000exdate=${exdate.orEmpty()}",
         )
 
     /**
@@ -41,7 +44,8 @@ internal data class ProjectionRow(
         uid == other.uid && allDay == other.allDay && startMillis == other.startMillis &&
             endMillis == other.endMillis && durationSeconds == other.durationSeconds &&
             title == other.title && description == other.description && status == other.status &&
-            normalizedRule(rrule) == normalizedRule(other.rrule)
+            normalizedRule(rrule) == normalizedRule(other.rrule) &&
+            normalizedExdate(exdate) == normalizedExdate(other.exdate)
 
     /**
      * Provider values for insert and update. `DTEND` and `DURATION` are mutually exclusive, so
@@ -66,10 +70,13 @@ internal data class ProjectionRow(
             put(Events.DTEND, endMillis ?: startMillis)
             putNull(Events.RRULE)
             putNull(Events.DURATION)
+            // No rule means nothing can be excluded; a stale value would survive the merge.
+            putNull(Events.EXDATE)
         } else {
             put(Events.RRULE, rrule)
             put(Events.DURATION, CalendarDurations.text(durationSeconds ?: 1L, allDay))
             putNull(Events.DTEND)
+            if (exdate == null) putNull(Events.EXDATE) else put(Events.EXDATE, exdate)
         }
     }
 
@@ -124,6 +131,7 @@ internal fun project(document: JcalDocument, untitledFallback: String): Projecti
             endMillis = if (rrule == null) due.toEpochMilli() else null,
             durationSeconds = durationSeconds,
             rrule = rrule,
+            exdate = if (rrule == null) null else providerExdate(document),
         ),
     )
 }
@@ -138,6 +146,7 @@ internal fun providerRow(
     endMillis: Long?,
     durationText: String?,
     rrule: String?,
+    exdate: String?,
     status: Int,
 ): ProjectionRow {
     val rule = rrule?.takeIf { it.isNotBlank() }
@@ -150,6 +159,7 @@ internal fun providerRow(
         endMillis = if (rule == null) endMillis else null,
         durationSeconds = if (rule == null) null else (CalendarDurations.seconds(durationText) ?: -1L),
         rrule = rule,
+        exdate = if (rule == null) null else exdate?.takeIf { it.isNotBlank() },
         status = status,
     )
 }
