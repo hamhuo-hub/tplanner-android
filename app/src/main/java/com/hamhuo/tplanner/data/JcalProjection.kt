@@ -183,13 +183,17 @@ internal fun JcalDocument.expandForDisplay(windowStart: Instant, windowEnd: Inst
     val exceptions = exceptions()
     val duration = if (master.scheduled && due != null) java.time.Duration.between(start!!, due) else java.time.Duration.ZERO
     val occurrences = occurrenceInstants(windowStart, windowEnd)
+    // Never hide a record that exists: a rule this build cannot expand, or occurrences that all
+    // fall outside the window, still show the record's own row.
+    if (occurrences.isEmpty()) return listOf(master)
     return occurrences.map { at ->
         val id = occurrenceId(uid, at)
         master.copy(
             id = id,
             start = at,
             end = at.plus(duration),
-            completed = exceptions[at] ?: false,
+            // An explicit exception wins; otherwise the record's own state applies.
+            completed = exceptions[at] ?: master.completed,
             listId = master.listId,
         )
     }
