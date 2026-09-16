@@ -52,7 +52,11 @@ V5 is a single central SQLite writer behind the HTTP API. SQLite transactions at
 commit documents, monotonically increasing global revision, device sequence and permanent
 command receipts. A separate broker/materializer is not required for this single-server
 product. Use a new `sync-v5.sqlite` database; no reads of V3 data. All endpoints use
-`Authorization: Bearer <token>`; the server must require a configured token. HTTPS is
+`Authorization: Bearer <password>` with a password that is a constant in the code rather than
+generated, stored or configured: copying a generated token into every device was pure
+friction and its only failure mode was an opaque 401. It exists to stop casual scanning of
+the hostname, NOT as a security boundary — the deployment must not publish its address, and
+real authentication has to replace this rather than a longer constant. HTTPS is
 required outside local development. `serverId` is generated and persisted with this store.
 
 `GET /tplanner/v5/snapshot` returns:
