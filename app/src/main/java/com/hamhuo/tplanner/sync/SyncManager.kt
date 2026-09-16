@@ -106,17 +106,11 @@ class SyncManager(context: Context) {
 
     suspend fun getServerUrl(): String = settings.url.ifBlank { DEFAULT_SERVER_URL }
 
-    suspend fun getToken(): String = settings.token
-
     suspend fun saveServerUrl(url: String) {
         settings.url = normalizeServerUrl(url)
     }
 
-    suspend fun saveToken(token: String) {
-        settings.token = token.trim()
-    }
-
-    fun isConfigured(): Boolean = settings.url.isNotBlank() && settings.token.isNotBlank()
+    fun isConfigured(): Boolean = settings.url.isNotBlank()
 
     /** Full convergence: snapshot down, every queued command up, then its snapshot back down. */
     suspend fun syncAllOrThrow(serverUrl: String? = null) {

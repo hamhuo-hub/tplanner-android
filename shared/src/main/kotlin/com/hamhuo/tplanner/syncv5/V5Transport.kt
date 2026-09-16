@@ -5,17 +5,25 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
 
+/**
+ * 与服务端 `sync-server/src/v5/api.js` 的 SYNC_PASSWORD 必须一致。
+ *
+ * 它写死在两端，用户不需要配置任何东西。它只用于挡住"扫到域名就乱写"的流量，
+ * 不是安全边界：真正的保护是这个域名没有被公开传播。
+ */
+internal const val SYNC_PASSWORD = "2004"
+
 interface V5Transport {
     fun snapshot(): JSONObject
     fun send(batch: JSONObject): JSONObject
 }
 
-class V5Http(url: String, private val token: String) : V5Transport {
+class V5Http(url: String) : V5Transport {
     private val base = url.trim().trimEnd('/')
     init {
         val uri = URI(base)
         require(uri.scheme == "https" || (uri.scheme == "http" && uri.host in setOf("localhost", "127.0.0.1", "10.0.2.2"))) { "同步地址必须使用 HTTPS" }
-        require(uri.userInfo == null && uri.query == null && uri.fragment == null && token.isNotBlank()) { "请配置同步地址和令牌" }
+        require(uri.userInfo == null && uri.query == null && uri.fragment == null) { "请配置同步地址" }
     }
     override fun snapshot() = request("snapshot", null)
     override fun send(batch: JSONObject) = request("batch", batch)
@@ -24,7 +32,7 @@ class V5Http(url: String, private val token: String) : V5Transport {
         try {
             connection.connectTimeout = 15_000; connection.readTimeout = 30_000
             connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Authorization", "Bearer $SYNC_PASSWORD")
             connection.setRequestProperty("Accept", "application/json")
             if (body != null) {
                 connection.requestMethod = "POST"; connection.doOutput = true
@@ -70,12 +78,6 @@ class V5Settings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("tplanner_v5_settings", Context.MODE_PRIVATE)
     var url: String get() = prefs.getString("url", "").orEmpty()
         set(value) { check(prefs.edit().putString("url", value.trim().trimEnd('/')).commit()) }
-    /** The bare access token. A pasted `Bearer ` prefix is accepted and stripped, never doubled. */
-    var token: String get() = prefs.getString("token", "").orEmpty()
-        set(value) {
-            val normalized = value.trim().replace(Regex("^Bearer\\s+", RegexOption.IGNORE_CASE), "").trim()
-            check(prefs.edit().putString("token", normalized).commit())
-        }
     var calendarEnabled: Boolean get() = prefs.getBoolean("calendarEnabled", false)
         set(value) { check(prefs.edit().putBoolean("calendarEnabled", value).commit()) }
 }

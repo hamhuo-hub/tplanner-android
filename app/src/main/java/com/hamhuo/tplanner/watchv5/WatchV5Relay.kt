@@ -27,7 +27,7 @@ object WatchV5Relay {
         WatchV5Protocol.validateRequest(request)
         try {
             val settings = V5Settings(context.applicationContext)
-            val http = V5Http(settings.url, settings.token)
+            val http = V5Http(settings.url)
             val body = when (request.getString("kind")) {
                 "snapshot" -> http.snapshot()
                 "batch" -> {

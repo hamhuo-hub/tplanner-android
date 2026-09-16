@@ -132,7 +132,6 @@ fun MainScreen(
     initialJournalDate: String,
     initialJournalRecovery: JournalDraftRecovery,
     initialServerUrl: String,
-    initialToken: String,
     initialEventRecovery: EventDraftRecovery?,
 ) {
     val scope  = rememberCoroutineScope()
@@ -270,7 +269,6 @@ fun MainScreen(
 
     // ── Sync state ───────────────────────────────────────────────────────
     var serverUrl  by remember { mutableStateOf(initialServerUrl) }
-    var serverToken by remember { mutableStateOf(initialToken) }
     val syncOperation by SyncCoordinator.state.collectAsState()
     val syncStatus = syncOperation.phase.wireName
     var syncFeedback by remember { mutableStateOf<TPlannerSyncFeedbackPresentation?>(null) }
@@ -311,7 +309,6 @@ fun MainScreen(
         val requestedServerUrl = serverUrl
         SyncCoordinator.requestSync(reason) { report ->
             manager.saveServerUrl(requestedServerUrl)
-            manager.saveToken(serverToken)
             manager.syncAllOrThrow(requestedServerUrl)
             report(SyncPhase.UPDATING)
         }
@@ -323,7 +320,6 @@ fun MainScreen(
         val requestedServerUrl = serverUrl
         SyncCoordinator.requestStartupSync { report ->
             manager.saveServerUrl(requestedServerUrl)
-            manager.saveToken(serverToken)
             manager.syncAllOrThrow(requestedServerUrl)
             report(SyncPhase.UPDATING)
         }
@@ -521,11 +517,9 @@ fun MainScreen(
                     SyncSettingsPanel(
                         modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
                         serverUrl = serverUrl,
-                        serverToken = serverToken,
                         syncStatus = syncStatus,
                         syncMsg = syncMsg,
                         onUrlChange = { serverUrl = it },
-                        onTokenChange = { serverToken = it },
                         onClose = { panelOpen = false },
                         onOpenLogs = { showSyncLogs = true },
                         // 「连接」= 保存当前输入并立刻同步。requestSync 会先落盘再联网,
@@ -541,8 +535,7 @@ fun MainScreen(
                                     // 重置会丢弃本机状态,所以必须先保存当前输入,
                                     // 否则重新拉取时读到的还是空配置。
                                     manager.saveServerUrl(serverUrl)
-                                    manager.saveToken(serverToken)
-                                    manager.resetConnection()
+                                                            manager.resetConnection()
                                 }.onFailure { Log.w("TPlannerSync", "Reconnect failed", it) }
                             }
                         },

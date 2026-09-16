@@ -42,12 +42,11 @@ object V5Sync {
     suspend fun synchronize(context: Context) {
         val settings = V5Settings(context.applicationContext)
         val url = settings.url
-        val token = settings.token
-        require(url.isNotBlank() && token.isNotBlank()) { "请先配置同步地址与令牌" }
+        require(url.isNotBlank()) { "请先配置同步地址" }
         if (!inFlight.compareAndSet(false, true)) return
         try {
             val store = V5Store(context.applicationContext)
-            V5SyncClient(store, V5Http(url, token)).synchronize()
+            V5SyncClient(store, V5Http(url)).synchronize()
             // A freshly installed snapshot changes the desired calendar state. This is a queued
             // side effect: its failure never affects the synchronization that just succeeded.
             runCatching { TPlannerCalendarProjection.reconcile(context, store.documents()) }

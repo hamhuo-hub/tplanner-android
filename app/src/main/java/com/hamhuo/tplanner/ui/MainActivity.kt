@@ -79,7 +79,6 @@ class MainActivity : ComponentActivity() {
         val initialEventRecovery = eventStore.latestEventDraftRecovery()
         val initialEvents = eventStore.getAll()
         val initialServerUrl = manager.getServerUrl()
-        val initialToken = manager.getToken()
         V5Sync.request(this)
         setContent {
             TPlannerPhoneTheme {
@@ -94,7 +93,6 @@ class MainActivity : ComponentActivity() {
                     initialJournalDate = initialJournalDate,
                     initialJournalRecovery = initialJournalRecovery,
                     initialServerUrl = initialServerUrl,
-                    initialToken = initialToken,
                     initialEventRecovery = initialEventRecovery,
                 )
             }

@@ -108,11 +108,9 @@ fun NotesHeader(date: LocalDate, onPanelToggle: () -> Unit) {
 fun SyncSettingsPanel(
     modifier: Modifier,
     serverUrl: String,
-    serverToken: String,
     syncStatus: String,
     syncMsg: String,
     onUrlChange: (String) -> Unit,
-    onTokenChange: (String) -> Unit,
     onClose: () -> Unit,
     onOpenLogs: () -> Unit,
     onConnect: () -> Unit,
@@ -144,21 +142,13 @@ fun SyncSettingsPanel(
                 modifier    = Modifier.fillMaxWidth()
             )
 
-            // 访问令牌：中央服务器要求 Bearer 令牌，未配置时不同步。
-            MonoInput(
-                value       = serverToken,
-                placeholder = stringResource(R.string.sync_token_hint),
-                onValue     = onTokenChange,
-                modifier    = Modifier.fillMaxWidth()
-            )
-
-            // 地址与令牌只在这里被保存。输入框本身不落盘,所以必须有一个明确的动作:
+            // 地址只在这里被保存。输入框本身不落盘,所以必须有一个明确的动作:
             // 没有它,用户填完再按任何别的按钮都会读到空配置。
             TPlannerButton(
                 label    = stringResource(R.string.sync_connect),
                 onClick  = onConnect,
                 modifier = Modifier.fillMaxWidth(),
-                enabled  = serverUrl.isNotBlank() && serverToken.isNotBlank(),
+                enabled  = serverUrl.isNotBlank(),
             )
 
             // 状态

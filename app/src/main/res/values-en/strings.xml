@@ -86,7 +86,6 @@
     <string name="sync_logs_clear">Clear</string>
     <string name="sync_logs_empty">No logs yet</string>
     <string name="sync_server_title">Sync Server</string>
-    <string name="sync_token_hint">Access token</string>
     <string name="calendar_projection_title">System calendar</string>
     <string name="sync_connect">Connect &amp; sync</string>
     <string name="sync_reconnect">Reset local data &amp; resync</string>
