@@ -85,9 +85,20 @@ val nearestVersion = parseSemver(nearestTag)
 val (verMajor, verMinor, verPatch) = exactVersion ?: nearestVersion
     ?: Triple(fallbackVersion[0], fallbackVersion[1], fallbackVersion[2])
 
+// 版本号只认**已经推送到 origin** 的 tag：本地打了但没推的 tag 不能让产物自称正式版。
+// 远端取不到时按"未验证"处理，退化为 -dev。
+val exactTagIsPushed = exactTag != null && runGit(
+    listOf("ls-remote", "--tags", "--exit-code", "origin", "refs/tags/$exactTag"),
+) != null
+
+// versionCode 必须单调递增，否则新包装不上旧包（INSTALL_FAILED_VERSION_DOWNGRADE）。
+// 因此它继续按 exact/nearest 的**本地** tag 推导：远端还没有 tag 时版本名会退化，
+// 但安装序号不会倒退。
 val appVersionCode = verMajor * 1000 + verMinor * 100 + verPatch
 val appVersionName = when {
-    exactVersion != null -> "$verMajor.$verMinor.$verPatch"
+    exactVersion != null && exactTagIsPushed -> "$verMajor.$verMinor.$verPatch"
+    exactVersion != null -> "$verMajor.$verMinor.$verPatch-dev" +
+        (if (dirtyTree) "-dirty" else "") + "+tag-not-pushed"
     nearestVersion != null -> "$verMajor.$verMinor.$verPatch-dev" + (if (dirtyTree) "-dirty" else "")
     else -> "$verMajor.$verMinor.$verPatch-dev"
 }

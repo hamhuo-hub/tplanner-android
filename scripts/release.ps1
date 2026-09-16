@@ -1,12 +1,16 @@
 # Release script: tagging = release.
 # The git tag is the single source of truth for versioning; the root build.gradle.kts
-# derives versionName/versionCode via `git describe` at build time.
+# derives versionName via `git describe` at build time.
+#
+# Only a tag that exists on origin counts as a release: build.gradle.kts requires the exact
+# tag to be pushed before it will report a non-dev versionName. So a tag created here but
+# never pushed produces `X.Y.Z-dev+tag-not-pushed` — use -Push, or push afterwards.
 #
 # Usage:
 #   .\scripts\release.ps1 6.0.2          # create tag mobile_6.0.2 locally
 #   .\scripts\release.ps1 6.0.2 -Push    # create tag and push to origin
 #
-# After tagging, check the version that will be built: .\gradlew.bat printVersion
+# After tagging and pushing, check the version that will be built: .\gradlew.bat printVersion
 param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
@@ -26,6 +30,12 @@ function Pad([int[]]$parts) {
     ($parts | ForEach-Object { '{0:D4}' -f $_ }) -join ''
 }
 
+function Get-AndroidTags([string[]]$names) {
+    $names |
+        Where-Object { $_ -match '^(mobile_|PUKEKO_)\d+\.\d+\.\d+$' } |
+        Sort-Object -Descending { Pad ([int[]](($_ -replace '^(mobile_|PUKEKO_)', '') -split '\.')) }
+}
+
 # 1. Working tree must be clean, otherwise the tag would not include pending changes.
 if (git status --porcelain) {
     throw 'Working tree is dirty; commit or discard changes before tagging.'
@@ -36,22 +46,27 @@ if (git tag -l $tag) {
     throw "Tag $tag already exists."
 }
 
-# 3. Version must be strictly higher than the latest Android release tag
-#    (mobile_* plus legacy PUKEKO_*, so versionCode stays monotonic).
-#    Only this branch's own tags are considered; desktop's v* tags must not leak in here.
-$latest = git tag -l |
-    Where-Object { $_ -match '^(mobile_|PUKEKO_)\d+\.\d+\.\d+$' } |
-    Sort-Object -Descending { Pad ([int[]](($_ -replace '^(mobile_|PUKEKO_)', '') -split '\.')) } |
-    Select-Object -First 1
+# 3. Baseline = latest Android release tag that is actually ON THE REMOTE. Desktop's v* tags
+#    must not leak in here, and an unpushed local tag is not a release.
+$remoteTags = (git ls-remote --tags --refs origin) |
+    ForEach-Object { ($_ -split 'refs/tags/')[1] } |
+    Where-Object { $_ }
+$latestPushed = Get-AndroidTags $remoteTags | Select-Object -First 1
 
-if ($latest) {
-    $latestNum = $latest -replace '^(mobile_|PUKEKO_)', ''
+if ($latestPushed) {
+    $latestNum = $latestPushed -replace '^(mobile_|PUKEKO_)', ''
     if ((Pad $newParts) -le (Pad ([int[]]($latestNum -split '\.')))) {
-        throw "Version $Version is not higher than the latest tag $latest; bump the version."
+        throw "Version $Version is not higher than the latest pushed tag $latestPushed; bump the version."
     }
 }
 else {
-    Write-Warning 'No release tags found; this will be the first release tag.'
+    Write-Warning 'No Android release tag found on origin; this will be the first pushed release tag.'
+}
+
+# 3b. A higher LOCAL tag that was never pushed means an earlier release is missing upstream.
+$latestLocal = Get-AndroidTags (git tag -l) | Select-Object -First 1
+if ($latestLocal -and $latestLocal -ne $latestPushed) {
+    Write-Warning "Local tag $latestLocal is not on origin; push it too or the earlier release stays unpublished."
 }
 
 # 4. Confirm the current branch.
@@ -63,11 +78,14 @@ if ($branch -ne 'mobile_andorid') {
 # 5. Create an annotated tag (git describe prefers annotated tags).
 git tag -a $tag -m "Release $tag"
 $code = $newParts[0] * 1000 + $newParts[1] * 100 + $newParts[2]
-Write-Host "Tag created: $tag"
-Write-Host "Next build will produce: versionName = $Version , versionCode = $code"
+Write-Host "Tag created: $tag (versionCode $code)"
 
-# 6. Optional push.
+# 6. Push. Until the tag is on origin, versionName degrades to -dev; say so plainly.
 if ($Push) {
     git push origin $tag
-    Write-Host "Pushed $tag to origin."
+    Write-Host "Pushed $tag to origin. Next build: versionName = $Version , versionCode = $code"
+}
+else {
+    Write-Warning "Not pushed. Builds at this commit will report versionName = $Version-dev+tag-not-pushed."
+    Write-Host "Push it with: git push origin $tag"
 }

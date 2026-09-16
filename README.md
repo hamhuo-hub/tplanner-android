@@ -148,14 +148,19 @@ pwsh scripts/generate-watch-previews.ps1
 
 ## 发版（版本号管理）
 
-版本号以 git tag 为唯一来源，代码里不再手写：
+版本号以 git tag 为唯一来源，代码里不再手写。**只认已经推送到 origin 的 tag** ——
+本地打了但没推的 tag 不会让 APK 自称正式版，版本名会退化成 `-dev`。
 
 > **tag 命名约定**：master（桌面版）用 `v*`，mobile_andorid（Android）用 `mobile_*`，
-> 两者互不重叠、标签不会互相触发对方的工作流。历史前缀 `TUI_*`/`desktop_*`（桌面）、
-> `PUKEKO_*`（Android）仅作 `git describe` 兜底，不再用于新发版。
+> 两者互不重叠。历史前缀 `TUI_*`/`desktop_*`（桌面）、`PUKEKO_*`（Android）仅作
+> `git describe` 兜底，不再用于新发版。
 
-1. 本次发版 = 打 tag：`.\scripts\release.ps1 8.0.0`（可选 `-Push` 推送远程），生成 `mobile_8.0.0`
-2. 构建时由根 `build.gradle.kts` 用 `git describe` 推导，`:app` / `:wear` 自动引用：
-   - HEAD 恰好在 tag 上 → `versionName = 8.0.0`，`versionCode = 8000`（主×1000 + 次×100 + 补丁）
-   - HEAD 在 tag 之后 → `versionName = 8.0.0-dev`（开发版，可带 `-dirty`）
-3. 查看将生成的版本：`.\gradlew.bat printVersion`
+1. 发版 = 打 tag：`.\scripts\release.ps1 8.2.0`（可选 `-Push` 推送远程），生成 `mobile_8.2.0`
+2. 构建时由根 `build.gradle.kts` 用 `git describe` 推导：
+   - HEAD 恰好在**已推送**的 tag 上 → `versionName = 8.2.0`
+   - HEAD 在 tag 之后 → `versionName = 8.2.0-dev`（可带 `-dirty`）
+   - tag 只在本地、没推 → `8.2.0-dev+tag-not-pushed`
+3. `versionCode = 主×1000 + 次×100 + 补丁`。它**仍然按本地 tag 推导**：Android 拒绝安装
+   versionCode 更低的包（`INSTALL_FAILED_VERSION_DOWNGRADE`），所以安装序号绝不能因为
+   "远端还没推 tag" 而倒退。
+4. 查看将生成的版本：`.\gradlew.bat printVersion`
