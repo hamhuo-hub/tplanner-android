@@ -115,6 +115,7 @@ fun SyncSettingsPanel(
     onTokenChange: (String) -> Unit,
     onClose: () -> Unit,
     onOpenLogs: () -> Unit,
+    onConnect: () -> Unit,
     onReconnect: () -> Unit,
 ) {
     val msgColor = when (syncStatus) {
@@ -151,6 +152,15 @@ fun SyncSettingsPanel(
                 modifier    = Modifier.fillMaxWidth()
             )
 
+            // 地址与令牌只在这里被保存。输入框本身不落盘,所以必须有一个明确的动作:
+            // 没有它,用户填完再按任何别的按钮都会读到空配置。
+            TPlannerButton(
+                label    = stringResource(R.string.sync_connect),
+                onClick  = onConnect,
+                modifier = Modifier.fillMaxWidth(),
+                enabled  = serverUrl.isNotBlank() && serverToken.isNotBlank(),
+            )
+
             // 状态
             if (syncMsg.isNotBlank()) {
                 Text(syncMsg, color = msgColor, fontSize = TPlannerTypography.PhoneMicroSp.sp, fontFamily = FontFamily.SansSerif)
@@ -165,7 +175,7 @@ fun SyncSettingsPanel(
                 Text(stringResource(R.string.sync_logs_title), color = ACCENT_TEXT)
             }
 
-            // 换服务器/服务器重建后必须由用户显式重连:本地镜像与队列会被丢弃后重新拉取。
+            // 换服务器/服务器重建后才需要:本地镜像、队列与冲突都会被丢弃,不是"连接"按钮。
             TextButton(onClick = onReconnect) {
                 Text(stringResource(R.string.sync_reconnect), color = WARNING)
             }

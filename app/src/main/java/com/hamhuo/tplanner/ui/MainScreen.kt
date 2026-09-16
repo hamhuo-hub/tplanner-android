@@ -528,11 +528,22 @@ fun MainScreen(
                         onTokenChange = { serverToken = it },
                         onClose = { panelOpen = false },
                         onOpenLogs = { showSyncLogs = true },
+                        // 「连接」= 保存当前输入并立刻同步。requestSync 会先落盘再联网,
+                        // 所以这是输入框唯一的持久化入口。
+                        onConnect = {
+                            panelOpen = false
+                            requestSync(SyncReason.USER_GESTURE)
+                        },
                         onReconnect = {
                             panelOpen = false
                             scope.launch {
-                                runCatching { manager.resetConnection() }
-                                    .onFailure { Log.w("TPlannerSync", "Reconnect failed", it) }
+                                runCatching {
+                                    // 重置会丢弃本机状态,所以必须先保存当前输入,
+                                    // 否则重新拉取时读到的还是空配置。
+                                    manager.saveServerUrl(serverUrl)
+                                    manager.saveToken(serverToken)
+                                    manager.resetConnection()
+                                }.onFailure { Log.w("TPlannerSync", "Reconnect failed", it) }
                             }
                         },
                     )

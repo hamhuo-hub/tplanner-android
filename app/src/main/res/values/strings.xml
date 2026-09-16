@@ -89,7 +89,8 @@
     <string name="sync_server_title">同步服务器</string>
     <string name="sync_token_hint">访问令牌</string>
     <string name="calendar_projection_title">系统日历</string>
-    <string name="sync_reconnect">重置连接</string>
+    <string name="sync_connect">连接并同步</string>
+    <string name="sync_reconnect">重置本机数据并重新同步</string>
     <string name="unknown_error">未知错误</string>
     <string name="schedule_created_toast">已创建日程：%1$s</string>
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>

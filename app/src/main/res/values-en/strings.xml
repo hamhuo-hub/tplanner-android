@@ -88,7 +88,8 @@
     <string name="sync_server_title">Sync Server</string>
     <string name="sync_token_hint">Access token</string>
     <string name="calendar_projection_title">System calendar</string>
-    <string name="sync_reconnect">Reconnect</string>
+    <string name="sync_connect">Connect &amp; sync</string>
+    <string name="sync_reconnect">Reset local data &amp; resync</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
