@@ -70,8 +70,12 @@ class V5Settings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("tplanner_v5_settings", Context.MODE_PRIVATE)
     var url: String get() = prefs.getString("url", "").orEmpty()
         set(value) { check(prefs.edit().putString("url", value.trim().trimEnd('/')).commit()) }
+    /** The bare access token. A pasted `Bearer ` prefix is accepted and stripped, never doubled. */
     var token: String get() = prefs.getString("token", "").orEmpty()
-        set(value) { check(prefs.edit().putString("token", value.trim()).commit()) }
+        set(value) {
+            val normalized = value.trim().replace(Regex("^Bearer\\s+", RegexOption.IGNORE_CASE), "").trim()
+            check(prefs.edit().putString("token", normalized).commit())
+        }
     var calendarEnabled: Boolean get() = prefs.getBoolean("calendarEnabled", false)
         set(value) { check(prefs.edit().putBoolean("calendarEnabled", value).commit()) }
 }
