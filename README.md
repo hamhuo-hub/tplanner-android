@@ -54,6 +54,16 @@
 在途命令与冲突列表。编辑草稿不是第二份记录，它就是尚未被服务器接受的同一个文档。
 自动备份保留这份存储（里面有未同步的离线修改），排除服务器地址、诊断日志与中继回执。
 
+### 可观测性
+
+跨手机、手表、桌面与服务器的追踪契约见
+[docs/observability-v1.md](docs/observability-v1.md)：W3C `traceparent` 负责传播，
+`syncOperationId` 负责把重试串成同一件工作，TPlanner 只固定业务字段与事件词典
+（`sync.run.started`、`store.receipt.accepted`、`server.sequence.gap` 等）。
+诊断日志永远是独立缓冲区：写失败只丢日志，绝不影响同步事务；任务正文、口令与
+完整 jCal 一律不写日志。传输成功不等于同步成功——只有
+`store.snapshot.installed` 与 `store.inflight.released` 都出现，手表才允许显示“已同步”。
+
 ## Hop / 跃时表盘（开发中）
 
 Wear 新增 Hop：当前时间位于屏幕中央，放大的虚拟表盘随时间移动；日程只画与可见窗口
