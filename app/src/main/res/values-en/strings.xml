@@ -93,6 +93,8 @@
     <string name="schedule_created_toast">Schedule created: %1$s</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
     <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
+    <string name="ai_local_fallback">The model is unavailable; local rules were used instead. Expect a rougher result — please review before confirming.</string>
+    <string name="ai_empty_input">Nothing to read yet — write something first.</string>
     <string name="location_locating">Locating…</string>
     <string name="location_unavailable">Location unavailable</string>
     <string name="ai_schedule_extraction">AI schedule extraction</string>

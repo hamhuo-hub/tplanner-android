@@ -15,7 +15,11 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.hamhuo.tplanner.ai.AiSkillAssets
+import com.hamhuo.tplanner.ai.DeepSeekChatTransport
+import com.hamhuo.tplanner.ai.PlanExtractor
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
+import com.hamhuo.tplanner.syncv5.V5Store
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -59,11 +63,22 @@ class MainActivity : ComponentActivity() {
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
         val amapKey = BuildConfig.AMAP_API_KEY
         AmapGeocoder.setApiKey(amapKey)
-        val deepseekService = deepseekKey.takeIf { it.isNotBlank() }?.let(::DeepSeekAnalysisService)
+        // 契约资产在 APK 内的 assets/ai-skill/（由 scripts/generate-ai-skill.py --android 同步）。
+        // 读不到资产或版本不匹配时不再抛错中止：AI 路径自动退化为本地规则兜底。
+        val skillAssets = runCatching { AiSkillAssets.load { path -> assets.open(path).bufferedReader().readText() } }
+            .onFailure { Log.w(LLM_LOG_TAG, "phase=init_assets result=failed reason=${it.javaClass.simpleName}") }
+            .getOrNull()
+        val planExtractor = PlanExtractor(
+            assets = skillAssets,
+            transport = deepseekKey.takeIf { it.isNotBlank() }?.let { DeepSeekChatTransport(it) },
+            // 设备 UUID（不是个人信息）：只用于缓存隔离与限流分组。
+            userId = runCatching { "tplanner-${V5Store(this@MainActivity).deviceId}" }.getOrNull(),
+        )
         Log.i(
             LLM_LOG_TAG,
-            "phase=init provider=deepseek keyConfigured=${deepseekKey.isNotBlank()} " +
-                "serviceCreated=${deepseekService != null} " +
+            "phase=init skill=${skillAssets?.skillVersion ?: "unavailable"} " +
+                "keyConfigured=${deepseekKey.isNotBlank()} " +
+                "modelAvailable=${planExtractor.available} " +
                 "locationApiConfigured=${amapKey.isNotBlank()} syncProtocol=v5",
         )
 
@@ -86,7 +101,7 @@ class MainActivity : ComponentActivity() {
                     store = journalStore,
                     eventStore = eventStore,
                     manager = manager,
-                    deepseekService = deepseekService,
+                    planExtractor = planExtractor,
                     amapApiKey = amapKey,
                     initialContent = initialContent,
                     initialEvents = initialEvents,

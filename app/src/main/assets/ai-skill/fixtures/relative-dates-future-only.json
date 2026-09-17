@@ -1,0 +1,28 @@
+{
+  "id": "relative-dates-future-only",
+  "note": "相对日期（今天/周四/下周）必须相对消息里给出的基准时间解析；已过的时点不得落在过去。",
+  "request": {
+    "skill": "tplanner.plan-extract@1",
+    "turn": 1,
+    "locale": "zh-CN",
+    "now": {
+      "instant": "2026-09-16T11:20:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "weekday": "周三",
+      "relative": { "today": "2026-09-16", "tomorrow": "2026-09-17", "day_after": "2026-09-18" }
+    },
+    "thread": [
+      { "role": "user", "content": "今天下午三点开会，周四晚上九点前把周报交了，下周三体检" }
+    ]
+  },
+  "expect": [
+    { "assert": "topic-count", "min": 3 },
+    { "assert": "time-source-exists", "source": "stated", "count": 2 },
+    { "assert": "no-time-before-now" },
+    { "assert": "no-time-invented-as-stated" },
+    { "assert": "inferred-has-basis" },
+    { "assert": "time-within", "source": "stated", "after": "2026-09-16T06:00:00Z", "before": "2026-09-16T08:00:00Z" },
+    { "assert": "time-source-at-least", "source": "inferred", "count": 1 },
+    { "assert": "time-within", "source": "inferred", "after": "2026-09-23T00:00:00+08:00", "before": "2026-09-24T00:00:00+08:00" }
+  ]
+}

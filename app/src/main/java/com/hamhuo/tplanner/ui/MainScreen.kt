@@ -64,6 +64,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hamhuo.tplanner.ai.PlanExtractor
 import com.hamhuo.tplanner.timeline.TimelineScreen
 import com.hamhuo.tplanner.ui.SyncLogPanel
 import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
@@ -125,7 +126,7 @@ fun MainScreen(
     store: JournalStore,
     eventStore: ScheduleItemStore,
     manager: SyncManager,
-    deepseekService: DeepSeekAnalysisService?,
+    planExtractor: PlanExtractor?,
     amapApiKey: String,
     initialContent: String,
     initialEvents: List<ScheduleItem>,
@@ -388,7 +389,9 @@ fun MainScreen(
     var showScheduleSheet by remember { mutableStateOf(false) }
     var openingScheduleSheet by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf(false) }
-    var sheetTasks by remember { mutableStateOf<List<DeepSeekAnalysisService.ProposedTask>>(emptyList()) }
+    var sheetTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
+    var sheetAssumptions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sheetUsedFallback by remember { mutableStateOf(false) }
     var sheetRequestId by remember { mutableStateOf("") }
     var untangleInput by remember { mutableStateOf("") }
     var prefillLocation by remember { mutableStateOf("") }
@@ -450,7 +453,7 @@ fun MainScreen(
     }
 
     fun startDirectAiExtraction() {
-        if (deepseekService == null) {
+        if (planExtractor == null) {
             Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_SHORT).show(); return
         }
         if (showScheduleSheet || openingScheduleSheet) return
@@ -551,7 +554,7 @@ fun MainScreen(
                         modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
                     )
                 }
-                if (deepseekService != null) {
+                if (planExtractor != null) {
                     IconButton(
                         onClick = { startDirectAiExtraction() },
                         modifier = Modifier
@@ -687,43 +690,63 @@ fun MainScreen(
     // ── Schedule extraction flow ────────────────────────────────────────
 
     val submitForExtraction: (String) -> Unit = lambda@{ text ->
-        if (thinking) return@lambda
+        if (thinking || planExtractor == null) return@lambda
         val requestId = "ui-${UUID.randomUUID()}"
         sheetRequestId = requestId
         untangleInput = text
-        val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).apply {
-            timeZone = appLegacyTimeZone()
-        }.format(java.util.Date())
         val loc = prefillLocation.ifBlank { "" }
+        // 时间基准由客户端给：模型的提示词只允许用这一份锚点，绝不使用自己的训练时间。
+        val now = java.time.Instant.now().atZone(APP_ZONE)
 
         Log.i(
             LLM_LOG_TAG,
-            "request=$requestId phase=submit inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
+            "phase=submit request=$requestId inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
         )
         thinking = true
         sheetTasks = emptyList()
+        sheetAssumptions = emptyList()
+        sheetUsedFallback = false
         scope.launch {
             try {
-                val tasks = deepseekService?.extractTasks(text, stamp, loc, requestId).orEmpty()
+                // 传输是阻塞的（HttpURLConnection），放到 IO 线程；编排本身不碰界面。
+                val extraction = withContext(Dispatchers.IO) {
+                    planExtractor.extract(
+                        text = text,
+                        now = now,
+                        requestId = requestId,
+                        threadId = requestId,
+                        locationHint = loc,
+                        onTelemetry = { Log.i(LLM_LOG_TAG, "phase=telemetry ${it.logLine()}") },
+                    )
+                }
                 if (sheetRequestId != requestId || !showScheduleSheet) return@launch
 
-                if (tasks.isNotEmpty()) {
+                val proposal = extraction.proposal
+                if (proposal != null && !proposal.isEmpty) {
                     Log.i(
                         LLM_LOG_TAG,
-                        "request=$requestId phase=route result=proposal taskCount=${tasks.size} " +
-                            "scheduledCount=${tasks.count { it.startIso != null }}",
+                        "phase=route request=$requestId result=proposal fallback=${extraction.usedFallback} " +
+                            "topics=${proposal.topics.size} actions=${proposal.actions.size}",
                     )
-                    sheetTasks = tasks
+                    sheetTasks = proposal.actions.map { ReviewItem(action = it, selected = it.time.selectedByDefault) }
+                    sheetAssumptions = proposal.assumptions
+                    sheetUsedFallback = extraction.usedFallback
                     thinking = false
-                } else {
-                    Log.w(LLM_LOG_TAG, "request=$requestId phase=route result=unavailable")
-                    if (sheetRequestId == requestId && showScheduleSheet) {
-                        thinking = false
-                        Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+                    if (extraction.usedFallback) {
+                        // 如实告诉用户这次不是模型给的：本地规则识别能力有限。
+                        Toast.makeText(context, R.string.ai_local_fallback, Toast.LENGTH_LONG).show()
                     }
+                } else {
+                    Log.w(LLM_LOG_TAG, "phase=route request=$requestId result=empty reason=${extraction.reason}")
+                    thinking = false
+                    Toast.makeText(
+                        context,
+                        if (extraction.reason == "empty_input") R.string.ai_empty_input else R.string.ai_service_unavailable,
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             } catch (error: Exception) {
-                Log.e(LLM_LOG_TAG, "request=$requestId phase=submit result=failed errorType=${error.javaClass.simpleName}", error)
+                Log.e(LLM_LOG_TAG, "phase=submit request=$requestId result=failed errorType=${error.javaClass.simpleName}", error)
                 if (showScheduleSheet && sheetRequestId == requestId) {
                     thinking = false
                     Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
@@ -732,32 +755,39 @@ fun MainScreen(
         }
     }
 
-    fun confirmTasks(selected: List<DeepSeekAnalysisService.ProposedTask>) {
+    fun confirmTasks(selected: List<ReviewItem>) {
         val requestId = sheetRequestId.ifBlank { return }
         if (selected.isEmpty() || thinking) return
         val now = System.currentTimeMillis()
         // Every id derives from the persisted requestId, so confirming the same proposal again
         // rewrites exactly these records through the store's upsert path instead of duplicating them.
-        val items = selected.mapIndexed { index, task ->
-            val start = task.startIso?.let(::parseAgentDatetime)
-            val end = task.endIso?.let(::parseAgentDatetime)
-            // A task the user gave no time for keeps no time: no date is fabricated for it.
-            val endAt = if (start == null) Instant.EPOCH else end?.takeIf { it.isAfter(start) } ?: start.plusSeconds(3_600)
+        val items = selected.mapIndexed { index, review ->
+            val action = review.action
+            val time = action.time
+            val start = if (review.clearTime) null else time.start?.let(::parseContractInstant)
+            val end = if (review.clearTime) null else time.end?.let(::parseContractInstant)
+            // A task without a stated start keeps no start: never fabricate one. A deadline-only
+            // action keeps its DUE and is stored as scheduled.
+            val endAt = when {
+                start == null && end == null -> Instant.EPOCH
+                start == null -> end!!
+                else -> end?.takeIf { it.isAfter(start) } ?: start
+            }
             ScheduleItem(
                 id = stableUntangleId("task:$index", requestId),
-                title = task.title,
+                title = action.title,
                 type = "task",
                 start = start ?: Instant.EPOCH,
                 end = endAt,
                 completed = false,
-                checklist = task.checklist.mapIndexed { checkIndex, text ->
-                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), text, false)
+                checklist = action.subtasks.mapIndexed { checkIndex, subtask ->
+                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), subtask.text, false)
                 },
-                colorId = task.colorId,
-                note = task.note,
+                colorId = action.colorId,
+                note = action.note,
                 deletedAt = 0L,
                 updatedAt = now,
-                scheduled = start != null,
+                scheduled = start != null || end != null,
                 lat = gpsLat,
                 lng = gpsLng,
             )
@@ -816,14 +846,29 @@ fun MainScreen(
                     initialText = untangleInput,
                     thinking = thinking,
                     tasks = sheetTasks,
+                    assumptions = sheetAssumptions,
+                    usedFallback = sheetUsedFallback,
                     onTextChange = { text ->
                         untangleInput = text
+                    },
+                    onToggleSelected = { index ->
+                        sheetTasks = sheetTasks.mapIndexed { position, item ->
+                            if (position == index) item.copy(selected = !item.selected) else item
+                        }
+                    },
+                    onToggleTime = { index ->
+                        // "只去掉时间、保留任务"：不新建机制，复用既有的"未排期"语义。
+                        sheetTasks = sheetTasks.mapIndexed { position, item ->
+                            if (position == index) item.copy(clearTime = !item.clearTime) else item
+                        }
                     },
                     onDismiss = {
                         Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
                         showScheduleSheet = false
                         thinking = false
                         sheetTasks = emptyList()
+                        sheetAssumptions = emptyList()
+                        sheetUsedFallback = false
                         sheetRequestId = ""
                         untangleInput = ""
                     },
@@ -1076,8 +1121,12 @@ fun MainScreen(
     }
 }
 
-private fun parseAgentDatetime(iso: String): Instant? = try {
-    java.time.LocalDateTime.parse(iso).atZone(APP_ZONE).toInstant()
+/**
+ * 契约里的时间一律是带偏移量的 ISO 8601（`2026-09-17T19:30:00+08:00`）。
+ * 只接受这一种写法：没有偏移量的字符串在两端会解析成不同时刻，宁可当作没有时间。
+ */
+private fun parseContractInstant(iso: String): Instant? = try {
+    java.time.OffsetDateTime.parse(iso).toInstant()
 } catch (_: Exception) { null }
 
 private fun stableUntangleId(namespace: String, requestId: String): String =

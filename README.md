@@ -132,9 +132,31 @@ pwsh scripts/generate-watch-previews.ps1
 
 ### AI 辅助
 
+设计稿与实施进度见 [docs/ai-skill.md](docs/ai-skill.md)：把「写日程」提取器改成
+**一份契约、四端消费**的能力（手机 / 手表 / 桌面 / 服务端代理）。
+手机端已落地（`app/src/main/java/com/hamhuo/tplanner/ai/`），桌面端待接入。
+
+识别结果分三层：**主题 → 动作 → 子任务**。时间分三种来源：`stated`（用户明确说了）、
+`inferred`（模型按依据推测，必须带依据与置信度，低置信度默认不勾选）、`none`（推不出来）。
+模型不可用（断网 / 没 key / 429 / 结构跑偏）时自动退化为本地规则识别，界面会如实标注。
+
+契约资产唯一源在 `design-assets/ai-skill/`（`system-prompt.md`、`tools/create-plan.json`、
+`fixtures/`、`assertions.md`），由 `scripts/generate-ai-skill.py` 同步到各端自己的工作树：
+
+```powershell
+python scripts/generate-ai-skill.py --android           # 同步到 app/src/main/assets/ai-skill
+python scripts/generate-ai-skill.py --check --android   # 校验副本没有漂移
+```
+
+客户端只读自己工作树内的副本，不跨工作树读资产；手改副本会被 `--check` 判为不一致。
+
 | 术语 | 说明 |
 |------|------|
-| `ProposedTask` | AI 提取出的一个独立目标主题及其清单 |
+| `topic` | 一段话里的一个独立主题/目标；彼此独立的事情必须分开 |
+| `action` | 为达成某个主题要做的一个动作；落盘时就是一个任务记录 |
+| `subtask` | 动作内部的勾选项；落盘为 `x-tplanner-checklist` |
+| `time.source` | 时间来源：`stated` 用户明确说了 / `inferred` 有依据的推测 / `none` 推不出来 |
+| `ProposedTask` | 旧手机端提取结果（单层目标 + 清单）；由 `topic` / `action` 取代 |
 
 ### 变量命名
 

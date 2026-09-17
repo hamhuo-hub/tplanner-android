@@ -1,0 +1,29 @@
+{
+  "id": "multi-topic-no-time",
+  "note": "一段话三个独立主题，全部没有明确时间；考察主题切分、动作拆分、时间推测与依据。本地兜底按标点切句，主题数下限取 2（模型路径应为 3）。",
+  "request": {
+    "skill": "tplanner.plan-extract@1",
+    "turn": 1,
+    "locale": "zh-CN",
+    "now": {
+      "instant": "2026-09-16T11:20:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "weekday": "周三",
+      "relative": { "today": "2026-09-16", "tomorrow": "2026-09-17", "day_after": "2026-09-18" }
+    },
+    "thread": [
+      { "role": "user", "content": "下周要交论文，还得剪个视频，周六下午还要去聚会" }
+    ]
+  },
+  "expect": [
+    { "assert": "topic-count", "min": 2 },
+    { "assert": "every-topic-has-actions", "min": 1 },
+    { "assert": "no-time-invented-as-stated" },
+    { "assert": "inferred-has-basis" },
+    { "assert": "inferred-times-ordered" },
+    { "assert": "mentioned-topic", "title_contains": "论文" },
+    { "assert": "mentioned-topic", "title_contains": "视频" },
+    { "assert": "mentioned-topic", "title_contains": "聚会" },
+    { "assert": "time-source-at-least", "source": "inferred", "count": 1 }
+  ]
+}

@@ -1,5 +1,7 @@
 package com.hamhuo.tplanner
 
+import com.hamhuo.tplanner.ai.PlannedAction
+import com.hamhuo.tplanner.ai.TimeSource
 import com.hamhuo.tplanner.ui.components.TPlannerButton
 import com.hamhuo.tplanner.ui.components.TPlannerButtonStyle
 import com.hamhuo.tplanner.ui.components.TPlannerIconButton
@@ -52,37 +54,60 @@ import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Renders a stated time; a task with no time never gets one invented for display either. */
-private fun prettyWhen(startIso: String, endIso: String?): String {
-    return try {
-        val start = java.time.LocalDateTime.parse(startIso)
-        val end = endIso?.let { runCatching { java.time.LocalDateTime.parse(it) }.getOrNull() }
-        val today = appToday()
-        val startHm = "%02d:%02d".format(start.hour, start.minute)
-        val zh = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[start.dayOfWeek.value - 1]
-        val date = when (start.toLocalDate()) {
-            today -> "今天"
-            today.plusDays(1) -> "明天"
-            else -> "${start.monthValue}月${start.dayOfMonth}日 $zh"
-        }
-        when {
-            end == null -> "$date $startHm"
-            start.toLocalDate() == end.toLocalDate() ->
-                "$date $startHm–%02d:%02d".format(end.hour, end.minute)
-            else -> "$date $startHm – ${end.monthValue}月${end.dayOfMonth}日 %02d:%02d".format(end.hour, end.minute)
-        }
-    } catch (_: Exception) { startIso }
+/**
+ * 复核列表里的一项：一个动作 + 用户当前的勾选与时间取舍。
+ *
+ * [clearTime] 是"只去掉时间、保留任务"——`inferred` 的时间是模型猜的，用户有权只要事不要时间。
+ */
+data class ReviewItem(
+    val action: PlannedAction,
+    val selected: Boolean = true,
+    val clearTime: Boolean = false,
+) {
+    /** 时间是否来自推断；只有推断的时间才提供"去掉时间"这个开关。 */
+    val timeIsInferred: Boolean get() = action.time.source == TimeSource.INFERRED
+}
+
+/**
+ * 契约里的时间是带偏移量的 ISO 8601，这里按用户所在时区渲染；
+ * 只有 `end` 没有 `start` 时渲染成截止期限（"周五 21:00 前"），它同样是真实的时间约束。
+ */
+private fun prettyWhen(startIso: String?, endIso: String?): String {
+    val start = startIso?.let { runCatching { java.time.OffsetDateTime.parse(it).atZoneSameInstant(APP_ZONE) }.getOrNull() }
+    val end = endIso?.let { runCatching { java.time.OffsetDateTime.parse(it).atZoneSameInstant(APP_ZONE) }.getOrNull() }
+    val today = appToday()
+    if (start == null) {
+        val deadline = end ?: return ""
+        return "${dayLabelOf(deadline.toLocalDate(), today)} %02d:%02d 前".format(deadline.hour, deadline.minute)
+    }
+    val date = dayLabelOf(start.toLocalDate(), today)
+    val startHm = "%02d:%02d".format(start.hour, start.minute)
+    return when {
+        end == null -> "$date $startHm"
+        start.toLocalDate() == end.toLocalDate() -> "$date $startHm–%02d:%02d".format(end.hour, end.minute)
+        else -> "$date $startHm – ${end.monthValue}月${end.dayOfMonth}日 %02d:%02d".format(end.hour, end.minute)
+    }
+}
+
+private fun dayLabelOf(date: java.time.LocalDate, today: java.time.LocalDate): String {
+    val weekday = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[date.dayOfWeek.value - 1]
+    return when (date) {
+        today -> "今天"
+        today.plusDays(1) -> "明天"
+        else -> "${date.monthValue}月${date.dayOfMonth}日 $weekday"
+    }
 }
 
 /**
  * Full-screen task-extraction panel. Three states:
  *
  *   EDIT     — write text describing the goals on your mind
- *   THINKING — the LLM is splitting that text into independent goal/theme tasks
- *   CONFIRM  — review the extracted tasks, toggle the ones to keep, confirm them together
+ *   THINKING — the model is splitting that text into topics → actions → subtasks
+ *   CONFIRM  — review the extracted actions, toggle the ones to keep, confirm them together
  *
- * No QA, no clarifying questions. Every task is a task record; a task with no stated time keeps
- * no time, and the whole selection is accepted in one local transaction.
+ * 时间来源必须看得见：`stated`（用户写的）与 `inferred`（模型按依据推测的）用不同样式，
+ * 推测定为低置信度时默认不勾选，并且可以"只去掉时间、保留任务"。
+ * 没有时间就没有时间，界面不会替它编一个。整份选择在一次本地事务里落盘。
  */
 @Composable
 fun UntangleSheet(
@@ -91,11 +116,15 @@ fun UntangleSheet(
     locationLoading: Boolean,
     initialText: String,
     thinking: Boolean,
-    tasks: List<DeepSeekAnalysisService.ProposedTask>,
+    tasks: List<ReviewItem>,
+    assumptions: List<String>,
+    usedFallback: Boolean,
     onTextChange: (String) -> Unit,
+    onToggleSelected: (Int) -> Unit,
+    onToggleTime: (Int) -> Unit,
     onDismiss: () -> Unit,
     onSubmit: (text: String) -> Unit,
-    onConfirmTasks: (List<DeepSeekAnalysisService.ProposedTask>) -> Unit,
+    onConfirmTasks: (List<ReviewItem>) -> Unit,
 ) {
     var text by remember(requestId) { mutableStateOf(initialText) }
     val focusRequester = remember { FocusRequester() }
@@ -156,11 +185,10 @@ fun UntangleSheet(
 
             // ── task confirmation list ───────────────────────────────
             tasks.isNotEmpty() -> {
-                var selectedIndexes by remember(requestId) { mutableStateOf(tasks.indices.toSet()) }
-                val selected = tasks.filterIndexed { index, _ -> index in selectedIndexes }
+                val selected = tasks.filter { it.selected }
                 Text(
-                    stringResource(R.string.untangle_confirm_title),
-                    color = DIM,
+                    if (usedFallback) "本地规则识别（未使用模型）" else stringResource(R.string.untangle_confirm_title),
+                    color = if (usedFallback) ACCENT_TEXT else DIM,
                     fontSize = TPlannerTypography.PhoneSupportingSp.sp,
                     modifier = Modifier.padding(bottom = 16.dp),
                 )
@@ -168,8 +196,9 @@ fun UntangleSheet(
                     modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    tasks.forEachIndexed { index, task ->
-                        val checked = index in selectedIndexes
+                    tasks.forEachIndexed { index, item ->
+                        val action = item.action
+                        val checked = item.selected
                         Column(
                             modifier = Modifier.fillMaxWidth()
                                 .background(SURFACE, RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp))
@@ -178,10 +207,7 @@ fun UntangleSheet(
                                     if (checked) FOCUS else BORDER,
                                     RoundedCornerShape(TPlannerGeometry.RadiusCardDp.dp),
                                 )
-                                .clickable {
-                                    selectedIndexes =
-                                        if (checked) selectedIndexes - index else selectedIndexes + index
-                                }
+                                .clickable { onToggleSelected(index) }
                                 .padding(18.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -213,7 +239,7 @@ fun UntangleSheet(
                                     }
                                 }
                                 Text(
-                                    task.title,
+                                    action.title,
                                     color = TEXT_EDITOR,
                                     fontSize = TPlannerTypography.PhoneTitleSp.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -221,34 +247,102 @@ fun UntangleSheet(
                                     modifier = Modifier.weight(1f),
                                 )
                             }
-                            Text(
-                                task.startIso?.let { prettyWhen(it, task.endIso) }
-                                    ?: stringResource(R.string.untangle_no_time),
-                                color = if (task.startIso != null) ACCENT_TEXT else DIM,
-                                fontSize = TPlannerTypography.PhoneSupportingSp.sp,
-                            )
-                            if (task.checklist.isNotEmpty()) {
+                            // 主题多了以后标题会重复，只在换主题时显示一次归属。
+                            if (index == 0 || tasks[index - 1].action.topicTitle != action.topicTitle) {
+                                Text(
+                                    action.topicTitle,
+                                    color = DIM,
+                                    fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                                )
+                            }
+                            val timeLabel = if (item.clearTime) {
+                                stringResource(R.string.untangle_no_time)
+                            } else {
+                                prettyWhen(action.time.start, action.time.end)
+                                    .ifBlank { stringResource(R.string.untangle_no_time) }
+                            }
+                            val timeColor = when {
+                                item.clearTime -> DIM
+                                action.time.source == TimeSource.STATED -> ACCENT_TEXT
+                                action.time.source == TimeSource.INFERRED -> GOLD
+                                else -> DIM
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    timeLabel,
+                                    color = timeColor,
+                                    fontSize = TPlannerTypography.PhoneSupportingSp.sp,
+                                )
+                                if (action.time.source == TimeSource.INFERRED && !item.clearTime) {
+                                    Text(
+                                        "（预计）",
+                                        color = DIM,
+                                        fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                                    )
+                                }
+                            }
+                            // 推测的依据要能看见，否则用户没有理由相信这个时间。
+                            if (action.time.source == TimeSource.INFERRED && !item.clearTime &&
+                                !action.time.basis.isNullOrBlank()
+                            ) {
+                                Text(
+                                    action.time.basis,
+                                    color = DIM,
+                                    fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                                    lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
+                                )
+                            }
+                            // 推测出来的时间可以单独去掉，任务本身留着。
+                            if (item.timeIsInferred &&
+                                (action.time.start != null || action.time.end != null)
+                            ) {
+                                Text(
+                                    if (item.clearTime) "恢复这个时间" else "不要这个时间",
+                                    color = ACCENT_TEXT,
+                                    fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                                    modifier = Modifier.clickable { onToggleTime(index) },
+                                )
+                            }
+                            if (action.subtasks.isNotEmpty()) {
                                 Text(
                                     stringResource(R.string.untangle_checklist_label),
                                     color = DIM,
                                     fontSize = TPlannerTypography.PhoneMetaSp.sp,
                                 )
-                                task.checklist.forEach { item ->
+                                action.subtasks.forEach { subtask ->
                                     Text(
-                                        "· $item",
+                                        "· ${subtask.text}",
                                         color = DIM,
                                         fontSize = TPlannerTypography.PhoneMetaSp.sp,
                                         lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
                                     )
                                 }
                             }
-                            if (task.note.isNotBlank()) Text(
-                                task.note,
+                            if (action.note.isNotBlank()) Text(
+                                action.note,
                                 color = DIM,
                                 fontSize = TPlannerTypography.PhoneMetaSp.sp,
                                 lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
                             )
-                            Text("颜色 ${task.colorId + 1}", color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
+                        }
+                    }
+                }
+                if (assumptions.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("时间是怎么估的", color = DIM, fontSize = TPlannerTypography.PhoneMetaSp.sp)
+                        assumptions.forEach { assumption ->
+                            Text(
+                                "· $assumption",
+                                color = DIM,
+                                fontSize = TPlannerTypography.PhoneMetaSp.sp,
+                                lineHeight = TPlannerTypography.PhoneSupportingLineHeightSp.sp,
+                            )
                         }
                     }
                 }

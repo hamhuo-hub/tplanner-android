@@ -1,0 +1,27 @@
+{
+  "id": "stated-anchor-and-order",
+  "note": "明确的锚点时间 + 先后关系（在车上 / 完成后）；考察 stated 与 inferred 并存、以及 depends_on 排序。",
+  "request": {
+    "skill": "tplanner.plan-extract@1",
+    "turn": 1,
+    "locale": "zh-CN",
+    "now": {
+      "instant": "2026-09-16T11:20:00+08:00",
+      "time_zone": "Asia/Shanghai",
+      "weekday": "周三",
+      "relative": { "today": "2026-09-16", "tomorrow": "2026-09-17", "day_after": "2026-09-18" }
+    },
+    "thread": [
+      { "role": "user", "content": "明天晚上8点火车，在车上完成申论，完成后发给老师" }
+    ]
+  },
+  "expect": [
+    { "assert": "topic-count", "min": 2 },
+    { "assert": "every-topic-has-actions", "min": 1 },
+    { "assert": "time-source-exists", "source": "stated", "count": 1 },
+    { "assert": "time-within", "source": "stated", "after": "2026-09-17T19:00:00+08:00", "before": "2026-09-17T21:30:00+08:00" },
+    { "assert": "no-time-invented-as-stated" },
+    { "assert": "inferred-has-basis" },
+    { "assert": "first-action-has-evidence" }
+  ]
+}

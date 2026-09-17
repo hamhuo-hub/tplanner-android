@@ -1,0 +1,119 @@
+{
+  "name": "create_plan",
+  "description": "把用户的自然语言整理成 主题 → 动作 → 子任务，并为每个动作标注时间来源（stated 用户明确说了 / inferred 有依据的推测 / none 推不出来）。必须先调用本工具，不要用普通文本回答。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["understanding", "topics", "assumptions", "needs_clarification"],
+    "properties": {
+      "understanding": {
+        "type": "string",
+        "description": "一句话回显你理解到的内容，例如『你在准备三件事：论文、视频、周六聚会』。没有识别到任何事项时在这里说明原因。"
+      },
+      "topics": {
+        "type": "array",
+        "description": "独立主题列表。一件事一个主题；彼此独立的事情必须分开，不要合并。没有识别到事项时传空数组。",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "evidence", "color_id", "actions"],
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "该主题的简短标题（名词性目标），最多 40 个字符。"
+            },
+            "evidence": {
+              "type": "string",
+              "description": "从用户原话中逐字摘出的触发片段，最多 30 个字符；没有则传空串。"
+            },
+            "color_id": {
+              "type": "integer",
+              "enum": [0, 1, 2, 3, 4, 5, 6, 7],
+              "description": "0 蓝、1 金、2 粉、3 绿、4 紫、5 橙、6 青、7 灰。用户未指定时传 0。"
+            },
+            "actions": {
+              "type": "array",
+              "description": "为达成该主题需要做的动作列表，按发生顺序排列。",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "kind", "depends_on", "subtasks", "time", "note"],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "description": "这个动作的简短标题，动词性或可执行的短语，最多 40 个字符。"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["do", "prepare", "communicate", "travel", "wait", "review"],
+                    "description": "动作类型：do 执行、prepare 准备、communicate 联络、travel 出行、wait 等待、review 检查复盘。不确定时传 do。"
+                  },
+                  "depends_on": {
+                    "type": "array",
+                    "description": "同一主题内必须先完成的动作 id 列表，例如 [\"t1a1\"]。没有依赖时传空数组。",
+                    "items": { "type": "string" }
+                  },
+                  "subtasks": {
+                    "type": "array",
+                    "description": "该动作内部的勾选项，动词开头，每条最多 30 个字符。没有子任务时传空数组。",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["text"],
+                      "properties": {
+                        "text": { "type": "string", "description": "一条子任务。" }
+                      }
+                    }
+                  },
+                  "time": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "start", "end", "confidence", "basis"],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "enum": ["stated", "inferred", "none"],
+                        "description": "stated 用户明确说了时间；inferred 用户没明说但你有依据地推出；none 推不出来。"
+                      },
+                      "start": {
+                        "type": ["string", "null"],
+                        "description": "ISO 8601 带时区偏移的开始时间，例如 2026-09-17T19:30:00+08:00。source 为 none 时传 null。"
+                      },
+                      "end": {
+                        "type": ["string", "null"],
+                        "description": "ISO 8601 带时区偏移的结束时间，必须晚于 start，且与 start 同时给或同时为 null。source 为 none 时传 null。"
+                      },
+                      "confidence": {
+                        "type": "number",
+                        "description": "0–1。stated 一律 1；inferred 有明确锚点 ≥0.7、按常理估 0.4–0.6、纯猜 ≤0.3；none 传 0。"
+                      },
+                      "basis": {
+                        "type": ["string", "null"],
+                        "description": "inferred 时必填：一句话说清推断依据，例如『火车 20:00 之后，估 1 小时车程』。stated 时写用户原话片段。none 时传 null。"
+                      }
+                    }
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "补充说明，来自用户原话；没有则传空串。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "description": "你做的每一个时间或排期假设，一条一句。没有假设时传空数组。",
+        "items": { "type": "string" }
+      },
+      "needs_clarification": {
+        "type": "array",
+        "description": "默认传空数组。仅在完全无法判断用户想做什么时放一个问题。",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

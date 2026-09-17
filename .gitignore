@@ -66,6 +66,8 @@ src/assets/react.svg
 /.gradle
 /app/build
 /wear/build
+# AI 契约层（docs/ai-skill.md §10）的单元测试按约定不进仓库；测试源保留在本地工作区。
+/app/src/test
 /.kotlin
 /capacitor-cordova-android-plugins
 local.properties
@@ -80,6 +82,8 @@ keystore.properties
 Thumbs.db
 .env
 .env.*
+__pycache__/
+*.pyc
 captures/
 .externalNativeBuild/
 /build

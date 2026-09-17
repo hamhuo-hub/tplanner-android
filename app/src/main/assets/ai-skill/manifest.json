@@ -1,0 +1,17 @@
+{
+  "skill_version": "tplanner.plan-extract@1",
+  "entry": {
+    "system_prompt": "system-prompt.md",
+    "tool": "tools/create-plan.json",
+    "fixtures": "fixtures",
+    "assertions": "assertions.md"
+  },
+  "files": {
+    "assertions.md": "fc0f84068a1e3e5e12b38b1f1529cb7861914da9a3073552a982d695252c96df",
+    "fixtures/multi-topic-no-time.json": "6e8b4a1a2b8b553eb982424cbdcb9ca8ab2bb2b32a89e54dc51fb0584470868d",
+    "fixtures/relative-dates-future-only.json": "1cac3e8b6a923a526cd99bb8c0246a59b0698e4d7bb599f43f61a469fdec7232",
+    "fixtures/stated-anchor-and-order.json": "58132186a15c4da922e63e9d69fbdba06c84cf5017d89edc48f33e7f80cdc0bd",
+    "system-prompt.md": "eb909ba582f0d9076d5e275b4430c08520ed306a5d9a56542f3da60e5057756b",
+    "tools/create-plan.json": "d737a01e6559a068cfe827909fecc0fd57f742f66e92eaaba90fb11a11332950"
+  }
+}
