@@ -79,21 +79,21 @@ python scripts/generate-design-tokens.py --check --android
 
 动效使用 120 / 200 / 240ms，减少动态效果时取 `instant=0`。这些值由组件选择使用；仅加载变量不会自动关闭已有动画。网页须接 `prefers-reduced-motion`，Android 遵循平台动画设置。
 
-## 合并后的当日界面（agenda / note）
+## 合并后的当日界面（agenda / plan）
 
-手机主界面把「一天的时间轴」与「这一天的 Note」放在同一屏，三种状态（收起 / 展开 /
-未保存返回）共用同一组令牌：
+手机主界面把「一天的时间轴」与「这一天的 Plan（底部那张纸）」放在同一屏，三种状态
+（收起 / 展开 / 未保存返回）共用同一组令牌：
 
 | 令牌 | 值 | 用途 |
 | --- | --- | --- |
 | `component.agenda.timeGutterWidth` | `24px` | 时间刻度槽宽；刻度数字旋转后只占一行字高 |
 | `component.agenda.hourLabelRotation` | `-90` | 刻度数字的旋转角度，负值自下而上阅读 |
-| `component.note.miniNoteHeight` | `56px` | 收起的 mini note 高度，容纳 48px 触摸目标 |
-| `component.note.miniNoteRadius` | `card` | mini note 圆角 |
-| `component.note.miniNoteClearance` | `64px` | mini note 与悬浮导航岛之间必须留出的高度 |
-| `component.note.sheetRadius` | `dialog` | 上浮编辑面板的两个上圆角 |
-| `component.note.sheetTopGap` | `48px` | 顶部留给 "Note" 字样与关闭入口的缝（面板整体不透明，没有遮罩透明度令牌） |
-| `component.note.sheetBottomBarHeight` | `56px` | 面板右下角对勾保存条的高度 |
+| `component.plan.barHeight` | `56px` | 收起的 Plan 条高度，容纳 48px 触摸目标 |
+| `component.plan.barRadius` | `card` | Plan 条圆角 |
+| `component.plan.barClearance` | `64px` | Plan 条与悬浮导航岛之间必须留出的高度 |
+| `component.plan.sheetRadius` | `dialog` | 上浮编辑面板的两个上圆角 |
+| `component.plan.sheetTopGap` | `48px` | 顶部留给 "Plan" 字样与关闭入口的缝（面板整体不透明，没有遮罩透明度令牌） |
+| `component.plan.sheetBottomBarHeight` | `56px` | 面板右下角对勾保存条的高度 |
 
 颜色仍只来自 `semantic.color.*` 与既有 `component.*` 配对；未保存弹窗沿用语义色与
 `component.dialog` 的圆角，不新增色值。改这些数字只移动布局与圆角，不改变配色。

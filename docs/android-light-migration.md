@@ -61,28 +61,34 @@
 - 集成日志：`build/android-light-final-build.log`
 - 生成/核对命令：`python scripts/generate-design-tokens.py --android` / `python scripts/generate-design-tokens.py --check --android`。以上 APK/日志属于本地产物，不纳入 Git。
 
-## 后续批次：手机主界面合并（时间轴 + Note）
+## 后续批次：手机主界面合并（一天一屏 + Plan）
 
-上面记录的 JSON SHA 属于浅色迁移那一批。之后手机主界面把「随手记」与「时间线」合并成同一屏的一天：
+上面记录的 JSON SHA 属于浅色迁移那一批。之后的批次把手机主界面收成一套排版，并逐步删掉
+与"一天一屏"冲突的入口。当前状态：
 
-- 手机底栏只剩 `今天` / `Inbox` 两格（`PhoneTabBar`）；同步设置与同步日志浮层抽成
-  `MainScreen` 的 `syncOverlays`，同步设置入口是时间轴右上角的悬浮按钮。
+- 手机底栏只剩 `今天` / `Inbox` 两格（`PhoneTabBar`）。同步设置与同步日志浮层抽成
+  `MainScreen.syncOverlays`，入口是时间轴右上角的悬浮按钮。
 - 按屏宽分叉的"宽屏两栏"排版已删除（`isPhone` / `screenWidthDp < 840` / `notesCard` /
-  `NotesHeader` 一并移除）。折叠屏与大屏暂时复用同一套排版；更通用的自适应方案以后单独
-  设计，不在这里预留分叉。
-- 这一批继续删除：顶部日期条（`TimelineDayHeader`、`TimelineDateWindow`、日期选择器）、
-  时间轴右下角的加号（`TimelineAddButton`）、note 面板里的 AI 提取按钮。状态栏改为沉浸隐藏。
-- AI 提取入口改为「保存 Note 即自动开预览」：`UntangleSheet` 保留（识别结果必须先确认才落盘），
-  只是不再需要用户自己按提取、也不再需要手抄一遍正文。位置提示暂不采集，面板照实显示"未获取位置"。
-- 系统栏与输入法内边距只在各自使用方让位一次：主界面卡片用 `systemBars`，Note 面板用
-  `systemBars ∪ ime`，预览界面（`UntangleSheet`）由调用方传入同一组内边距，根节点不再统一加
-  （此前两处叠加会把键盘顶起时的布局顶乱）。
-- 令牌变化：删除 `component.note.scrimOpacity`（面板改为不透明），导出 401 个令牌。
-- 时间轴刻度改为旋转 90° 的纵向数字，刻度宽度取新令牌 `component.agenda.timeGutterWidth`；
-  日期条左侧锚点改用 `TimelineGeometry.dayAnchorWidth`，不再复用刻度宽度。
-- 新增 `component.note.*`（mini note 高度/圆角/让位高度、面板上圆角、顶缝、保存条高度、
-  遮罩透明度），对应 `ui/DayNotePanel.kt` 的三种状态。颜色仍全部来自既有语义令牌，没有
-  新增色值，因此对比度配对数量不变（54 必需 + 2 诊断）。
-- 令牌源在本批被修改：`design-assets/tokens/tplanner-light.tokens.json`
-  SHA-256 `21FD2FB77E69189A72C23D39446283D7C1FFD756A84DF608BCA01C1831D55EC1`，
-  导出 402 个令牌。改动后必须重跑生成器与品牌检查。
+  `NotesHeader`），折叠屏与大屏暂时复用同一套排版；更通用的自适应方案以后单独设计。
+- 已删除的旧入口：顶部日期条（`TimelineDayHeader`、`TimelineDateWindow`、日期选择器）、
+  时间轴右下角加号（`TimelineAddButton`）、Plan 面板里的 AI 提取按钮。状态栏改为沉浸隐藏
+  （`MainActivity.applyImmersiveMode`）。
+- 时间轴只画今天，时间刻度是旋转 90° 的纵向数字，刻度宽度取 `component.agenda.timeGutterWidth`。
+- 底部那张纸（Plan）是唯一写入口：`ui/DayPlanPanel.kt` 的收起 / 展开 / 未保存三态。
+  展开的面板完全不透明（因此没有遮罩透明度令牌），顶部留缝放 "Plan" 字样。
+- AI 提取的交互定稿：**保留"结果预览"，删掉"输入页面"**。`UntangleSheet` 收缩为
+  `ui/PlanPreview.kt`（纯确认页：没有输入框、没有"提取"按钮、没有面向用户的诊断信息），
+  输入只发生在纸上；`MainScreen` 用 `PlanStage`
+  （Collapsed / Editing / Submitting / Preview / Committing）驱动同一张纸的连续状态，
+  ✓ 的语义是"交给 TPlanner 整理"而不是保存（`submitPlanForPreview`）。
+- 时间在预览里只呈现三个层级：明确时间 / 「预计」（点开才展开依据）/ 「未排期」；本地兜底与
+  assumptions 只进 Logcat。确认后先让新卡片亮起（`revealedEventIds` → 0.96→1.0）再收纸。
+  位置提示暂不采集。
+- 内边距只在各自使用方让位一次：主界面卡片用 `systemBars`，Plan 面板与预览界面用
+  `systemBars ∪ ime`（由调用方传入），根节点不再统一加，避免键盘顶起时叠加两次。
+- 令牌：新增 `component.plan.*`（`barHeight` / `barRadius` / `barClearance` / `sheetRadius` /
+  `sheetTopGap` / `sheetBottomBarHeight`，原 `component.note.*` 随代码一起更名）。
+  颜色仍全部来自既有语义令牌，没有新增色值，对比度配对数量不变（54 必需 + 2 诊断）。
+- 令牌源现状：`design-assets/tokens/tplanner-light.tokens.json`
+  SHA-256 `533C6EF5F06BD743CB103722659BE268B0BEECD83B92B8C7B6B86985ED5F2FE0`，
+  导出 401 个令牌。改动后必须重跑生成器与品牌检查。

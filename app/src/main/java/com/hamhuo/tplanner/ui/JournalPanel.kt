@@ -303,7 +303,7 @@ fun MarkdownEditor(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
     showToolbar: Boolean = false,
-    // 非空时返回键交给调用方：合并后的 Note 面板要先判断「有没有未保存的改动」，
+    // 非空时返回键交给调用方：合并后的 Plan 面板要先判断「有没有未保存的改动」，
     // 不能在这里默默保存并关闭。
     onExitRequest: (() -> Unit)? = null,
     // false 时先不抢焦点：面板还在滑入动画里，输入法此刻弹起会把布局顶乱。

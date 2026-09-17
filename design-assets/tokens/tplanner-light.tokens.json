@@ -2964,20 +2964,20 @@
         }
       }
     },
-    "note": {
-      "$description": "当天 Note 的三个状态：底部 mini 条、上浮的圆角编辑面板（顶部留出放 Note 字样的缝）、未保存确认弹窗复用 dialog。miniNoteClearance 是 mini 条与悬浮导航岛之间必须留出的高度。",
-      "miniNoteHeight": {
+    "plan": {
+      "$description": "当天 Plan（底部那张纸）的三个状态：收起的 mini 条、上浮的圆角编辑面板（顶部留出放 Plan 字样的缝）、未保存确认弹窗复用 dialog。barClearance 是 mini 条与悬浮导航岛之间必须留出的高度。",
+      "barHeight": {
         "$type": "dimension",
         "$value": {
           "value": 56,
           "unit": "px"
         }
       },
-      "miniNoteRadius": {
+      "barRadius": {
         "$type": "dimension",
         "$value": "{semantic.radius.card}"
       },
-      "miniNoteClearance": {
+      "barClearance": {
         "$type": "dimension",
         "$value": {
           "value": 64,

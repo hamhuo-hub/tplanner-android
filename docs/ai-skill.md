@@ -18,12 +18,13 @@
 调用链（现状，仅手机）：
 
 ```
-UntangleSheet（写文字）
-  → MainScreen.submitForExtraction()            MainScreen.kt:689
-  → DeepSeekAnalysisService.extractTasks()      DeepSeekAnalysisService.kt:71
-  → POST api.deepseek.com /v1/chat/completions  model=deepseek-v4-flash
+PlanSheet（在底部那张纸上写一段自然语言）
+  → MainScreen.submitPlanForPreview()           ui/MainScreen.kt
+  → PlanExtractor.extract()                     ai/PlanExtractor.kt
+  → POST api.deepseek.com /v1/chat/completions  model=deepseek-flash
   → normalize()：没时间就保持没时间
-  → confirmTasks()：stableUntangleId("task:$i", requestId) → eventStore.saveAll(items)
+  → PlanPreview（只确认"理解得对不对"）
+  → MainScreen.confirmPlan()：stablePlanTaskId("task:$i", requestId) → eventStore.saveAll(items)
 ```
 
 两端的 jCal 模型已经**各自重复实现了一份**：`shared/src/main/kotlin/.../JcalDocument.kt`（Kotlin）与
@@ -97,7 +98,7 @@ UntangleSheet（写文字）
 │         HTTP 与重试 / 解析与本地兜底 / 遥测；不做任何业务判断
 ├─ L3 交互层（各端自己画，字段含义相同）──────────────────────────────────
 │   提案复核：主题 → 动作 → 子任务 → 时间（明确 / 推测 / 无）
-│   手机：保存 Note 自动开预览（`UntangleSheet`），确认后才落盘（见 §9.1）
+│   手机：提交 Plan → `PlanPreview` 确认后才落盘，输入只在纸上发生（见 §9.1）
 │   确认：稳定的 UID + 一次本地事务 + 幂等重确认
 │   映射：手机/手表 → ScheduleItem；桌面 → jCal VTODO → sync.persist()
 └─────────────────────────────────────────────────────────────────────────
@@ -320,7 +321,8 @@ scripts/generate-ai-skill.py                ← 复制 + 生成 manifest 哈希�
 
 ## 8. UI（各端一致，外壳各异）
 
-三段式，沿用手机端 `EDIT / THINKING / CONFIRM` 骨架（`UntangleSheet.kt`），但确认态从
+手机端已经定稿成"一张纸"的连续状态：`Editing → Submitting → Preview → Committing`
+（输入只在纸上发生，`PlanPreview` 是纯确认页）。桌面沿用同一骨架，但确认态从
 "平铺任务列表"升级为**可展开的两层结构**：
 
 ```
@@ -340,7 +342,7 @@ scripts/generate-ai-skill.py                ← 复制 + 生成 manifest 哈希�
 - 每项可"去掉时间保留任务"；
 - 「继续对话」把本轮提案放进 `previous_proposal`，下一轮是**修改**而不是重新提取；
 - 确认后：稳定 UID（`uuidv5(thread_id, topic/action/step 路径)`）+ 一次本地事务，重复确认写同一条记录
-  （现有 `stableUntangleId` 已是这个语义，保留并推广到桌面）；
+  （现有 `stablePlanTaskId` 已是这个语义，保留并推广到桌面）；
 - **thread 持久化**：客户端本地保存 thread（输入 + 提案 + 对话），重开界面能继续，不丢上下文。
   thread 是设备本地数据，**不进同步**。
 
@@ -358,7 +360,7 @@ scripts/generate-ai-skill.py                ← 复制 + 生成 manifest 哈希�
 | 请求体/schema 从 assets 读取并校验 `skill_version` | ✅ `AiSkillAssets`（读不到就退化为本地兜底，不崩） |
 | 本地确定性兜底 | ✅ `LocalPlanFallback`（断网/无 key/结构跑偏都能用） |
 | 遥测（`finish_reason`、命中缓存、推理 token、耗时） | ✅ `PlanTelemetry.logLine()`，不含用户正文 |
-| 复核界面区分三态并允许"只去掉时间" | ✅ `UntangleSheet` + `ReviewItem`；入口改为保存 Note 时自动打开（不再需要先按"提取"） |
+| 复核界面区分三态并允许"只去掉时间" | ✅ `PlanPreview`（纯确认页，无输入框/提取按钮）+ `ReviewItem`；提交 Plan 后自动出现 |
 | 失效提醒如实标注"本地规则识别" | ✅ `R.string.ai_local_fallback`（预览界面里如实提示） |
 | 真机联调（真实 key + 真实模型） | ❌ 本环境没有 key，只能靠单元测试与契约测试 |
 | 桌面端接入 | ❌ 见 §9 的 P3 |
@@ -372,7 +374,7 @@ scripts/generate-ai-skill.py                ← 复制 + 生成 manifest 哈希�
 | P2 手机重写 L2 | **已完成**：`DeepSeekAnalysisService` 删除，拆成 `ai/` 包 —— `AiJson`（契约层 JSON）、`SkillContract`、`PlanResponseParser`、`LocalPlanFallback`、`AiChatTransport`、`AiSkillClient`、`PlanExtractor`、`AiSkillAssets`；模型改 `deepseek-flash`；`thinking=enabled` + `reasoning_effort=low` + `tool_choice=auto`；`reasoning_content` 全程回传；时间基准与时区由 `PlanExtractor.timeContextOf(now)` 传入；提示词/schema 从 APK assets 读取并校验版本 | **45 个单元测试全绿**（`./gradlew :app:testDebugUnitTest`），`assembleDebug` 通过。三类断言已落地：请求体契约（§2.1 的 400 雷区）、解析降级规则、fixture 一致性。**尚未做真机联调**（需要 API key）：多轮追问不报 400、`prompt_cache_hit_tokens` 有值，只有真机能证明 |
 | P3 桌面接入 L2 | `src/ai/` 用同一份提示词与 schema；`sync.persist(document)` 写入；未知 `x-` 属性往返不丢 | 桌面与手机对同一语料产出**相同结构**（fixture 断言）；桌面写入后手机快照能看到 |
 | P4 本地兜底 | 两端的 `degraded` 路径 + UI 提示 | 断网/坏 key 下仍能提取并确认 |
-| P5 UI 三层 | 手机 `UntangleSheet` 升级为两层 + 时间芯片；桌面新建同等面板 | 视觉得到确认（两侧截图），`inferred` 可视可去 |
+| P5 UI 三层 | 手机 `PlanPreview` 升级为两层 + 时间芯片（三态已落地：明确 / 预计 / 未排期）；桌面新建同等面板 | 视觉得到确认（两侧截图），`inferred` 可视可去 |
 | P6 服务端代理 | `/tplanner/v5/ai`（服务端源码不在本仓，需另一条工作流） | 客户端不再持有 key；runbook 增补"AI 端点不落正文" |
 
 P1–P2 可以只动 `mobile_andorid`；P3 必须在 `.v5-worktrees/desktop`（`master`）里做，

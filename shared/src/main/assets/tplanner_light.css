@@ -75,12 +75,6 @@
   --tp-component-hop-typography-task-min: 0.6875rem;
   --tp-component-hop-typography-task-tracking-max-em: 0.12;
   --tp-component-hop-typography-time: 0.5625rem;
-  --tp-component-note-mini-note-clearance: 64px;
-  --tp-component-note-mini-note-height: 56px;
-  --tp-component-note-mini-note-radius: 12px;
-  --tp-component-note-sheet-bottom-bar-height: 56px;
-  --tp-component-note-sheet-radius: 16px;
-  --tp-component-note-sheet-top-gap: 48px;
   --tp-component-panel-background: #F6F8FA;
   --tp-component-panel-edge: #F6F8F2;
   --tp-component-panel-edge-width: 1px;
@@ -92,6 +86,12 @@
   --tp-component-panel-shadow-spread: 0px;
   --tp-component-panel-shadow-x: 0px;
   --tp-component-panel-shadow-y: 2px;
+  --tp-component-plan-bar-clearance: 64px;
+  --tp-component-plan-bar-height: 56px;
+  --tp-component-plan-bar-radius: 12px;
+  --tp-component-plan-sheet-bottom-bar-height: 56px;
+  --tp-component-plan-sheet-radius: 16px;
+  --tp-component-plan-sheet-top-gap: 48px;
   --tp-component-task-completed-foreground: #606670;
   --tp-component-task-completed-opacity: 1;
   --tp-component-task-current-background: #E5EEF8;

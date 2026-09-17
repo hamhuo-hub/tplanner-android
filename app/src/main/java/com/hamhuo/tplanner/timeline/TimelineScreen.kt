@@ -33,8 +33,10 @@ internal fun TimelineScreen(
     onAddTaskAt: (Instant) -> Unit,
     onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
-    // 合并后的当日界面把 mini note 放在时间轴下方；时间轴本身不解释它的语义。
-    notePanel: (@Composable () -> Unit)? = null,
+    // 刚在预览里确认的那几条：只让它们播一次出现动画。
+    revealedEventIds: Set<String> = emptySet(),
+    // 合并后的当日界面把 Plan 条放在时间轴下方；时间轴本身不解释它的语义。
+    planPanel: (@Composable () -> Unit)? = null,
 ) {
     val zone = APP_ZONE
     val now = rememberTimelineNow(zone)
@@ -84,13 +86,14 @@ internal fun TimelineScreen(
                 zone = zone,
                 state = state,
                 hourHeightPx = hourHeightPx,
+                revealedEventIds = revealedEventIds,
                 onEventClick = onEventClick,
                 onAddTaskAt = onAddTaskAt,
                 onEventMove = onEventMove,
                 modifier = Modifier.weight(1f),
             )
-            if (notePanel != null) {
-                notePanel()
+            if (planPanel != null) {
+                planPanel()
             }
         }
     }

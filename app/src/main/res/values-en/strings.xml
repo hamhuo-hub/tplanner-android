@@ -16,13 +16,12 @@
     <string name="timeline_conflict_count">Conflicts with %1$d items</string>
     <string name="timeline_drag_hint">Long press to move · snaps every 10 min</string>
     <string name="timeline_recurring_task">Recurring task</string>
-    <string name="note_sheet_title">Note</string>
-    <string name="note_open">Open Note</string>
-    <string name="note_save">Save Note</string>
-    <string name="note_discard">Discard</string>
-    <string name="note_keep_editing">Keep editing</string>
-    <string name="note_unsaved_title">Note not saved yet</string>
-    <string name="note_unsaved_message">Your changes are only on this device. Use the check mark to save this day’s note, or discard to go back to the last saved version.</string>
+    <string name="plan_sheet_title">Plan</string>
+    <string name="plan_open">Open plan</string>
+    <string name="plan_discard">Discard</string>
+    <string name="plan_keep_editing">Keep editing</string>
+    <string name="plan_unsaved_title">Plan not saved yet</string>
+    <string name="plan_unsaved_message">Your changes are only on this device. Use the check mark to save this day’s plan, or discard to go back to the last saved version.</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
     <string name="task_view_picker_title">Filters</string>
@@ -96,20 +95,24 @@
     <string name="schedule_created_multiple_toast">Created %1$d tasks</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
     <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
-    <string name="ai_local_fallback">The model is unavailable; local rules were used instead. Expect a rougher result — please review before confirming.</string>
     <string name="ai_no_task">Nothing to extract: %1$s</string>
     <string name="ai_empty_input">Nothing to read yet — write something first.</string>
-    <string name="location_locating">Locating…</string>
-    <string name="location_unavailable">Location unavailable</string>
-    <string name="untangle_title_confirm">Add tasks?</string>
-    <string name="untangle_confirm_title">Create these extracted tasks?</string>
-    <string name="untangle_no_time">No time set</string>
-    <string name="untangle_checklist_label">Checklist</string>
-    <string name="untangle_confirm_action">Add tasks</string>
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
     <string name="date_pattern_month_day_weekday">MMM d · E</string>
     <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
-    <string name="journal_edit_hint">Capture today’s thoughts and ideas…</string>
+    <string name="plan_edit_hint">What do you want to do?</string>
+    <string name="plan_submit">Hand to TPlanner</string>
+    <string name="plan_processing">Organizing…</string>
+    <string name="plan_preview_title">TPlanner read it as</string>
+    <string name="plan_preview_edit">Edit wording</string>
+    <string name="plan_preview_confirm">Add these</string>
+    <string name="plan_preview_no_time">Not scheduled</string>
+    <string name="plan_preview_estimated">Estimated</string>
+    <string name="plan_preview_estimated_why">How this time was estimated</string>
+    <string name="plan_preview_estimated_fallback">Your words had no exact time; TPlanner filled this one in.</string>
+    <string name="plan_preview_restore_time">Restore this time</string>
+    <string name="plan_preview_drop_time">Drop this time</string>
+    <string name="plan_preview_checklist">Checklist</string>
 
     <!-- System calendar projection (one-way side effect) -->
     <string name="calendar_projection_permission_denied">Calendar permission is not granted. System calendar projection is paused and will catch up after access returns.</string>

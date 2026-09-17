@@ -2,19 +2,17 @@ package com.hamhuo.tplanner
 
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -69,6 +67,9 @@ private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
 private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
 
+/** 新卡片出现动画的时长：只让"刚刚确认的那几条"亮一下，之后恢复正常渲染。 */
+private const val PLAN_REVEAL_MILLIS = 1_200L
+
 internal enum class ChromeMode {
     Minimal,
     PrimaryNavigation,
@@ -115,7 +116,7 @@ fun MainScreen(
     // 编辑或恢复草稿期间不推进日期。运行中的 Activity 跨过零点时，只要界面本来就停在
     // 「今天」，就先提交前一天再前进；用户主动翻到别的日期时保持原样。
     var journalEditing by remember { mutableStateOf(false) }
-    // 主界面同屏只展示一天：时间轴停在哪天，Note 就编辑哪天的内容。
+    // 主界面同屏只展示一天：时间轴停在哪天，Plan 就写哪天的内容。
     val initialTimelineDay = remember(initialJournalDate) {
         runCatching { LocalDate.parse(initialJournalDate) }.getOrDefault(appToday())
     }
@@ -207,77 +208,96 @@ fun MainScreen(
     fun saveJournalDraft(text: String) = journalActions.saveDraft(text)
     fun commitJournalDraft(text: String) = journalActions.commitDraft(text)
 
-    // ── AI 提取：保存 Note 之后自动开一次识别预览 ─────────────────────────
-    // 识别一定会跑，所以 note 面板里没有"提取"按钮；但结果必须先给用户过一眼，
-    // 预览界面（UntangleSheet）不是可删的东西：确认之前不落盘。
-    var showScheduleSheet by remember { mutableStateOf(false) }
-    var openingScheduleSheet by remember { mutableStateOf(false) }
-    var thinking by remember { mutableStateOf(false) }
-    var sheetTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
-    var sheetAssumptions by remember { mutableStateOf<List<String>>(emptyList()) }
-    var sheetUsedFallback by remember { mutableStateOf(false) }
-    var sheetRequestId by remember { mutableStateOf("") }
-    var untangleInput by remember { mutableStateOf("") }
-    // 位置提示暂时不再采集：识别改由保存 Note 触发，弹权限框会更打扰；
-    // 预览界面照实显示"未获取位置"，不假装知道用户在哪。
-    val prefillLocation = ""
+    // ── 底部那张纸：写 → 交给 TPlanner → 检查理解 → 落入时间 ──────────────
+    // 状态机只有这几步（PlanStage）：Collapsed → Editing → Submitting → Preview → Committing
+    // → Collapsed。同一个枚举决定纸长什么样，界面不自己猜。
+    var planStage by remember { mutableStateOf(PlanStage.Collapsed) }
+    var planUnsavedPrompt by remember { mutableStateOf(false) }
+    // 摊开纸时那一份已提交的正文：返回时用它判断"有没有未保存的改动"。
+    var planSessionBase by remember { mutableStateOf("") }
+    // 预览数据：模型给出的动作 + 识别这一次的 requestId（回执对不上就丢弃）。
+    var planTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
+    var planRequestId by remember { mutableStateOf("") }
+    // 刚落入时间线的那几条：只让它们播一次出现动画，之后就恢复正常渲染。
+    var revealedEventIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    // 时间基准由客户端给：模型的提示词只允许用这一份锚点，绝不使用自己的训练时间。
-    val submitForExtraction: (String) -> Unit = lambda@{ text ->
-        if (thinking || planExtractor == null) return@lambda
-        val requestId = "ui-${UUID.randomUUID()}"
-        sheetRequestId = requestId
-        untangleInput = text
-        val loc = prefillLocation.ifBlank { "" }
+    LaunchedEffect(revealedEventIds) {
+        if (revealedEventIds.isEmpty()) return@LaunchedEffect
+        delay(PLAN_REVEAL_MILLIS)
+        revealedEventIds = emptySet()
+    }
+
+    /** 把纸收回去（预览确认、丢弃、无改动返回都走这里）。 */
+    fun collapsePlan() {
+        planStage = PlanStage.Collapsed
+        journalEditing = false
+    }
+
+    /** 摊开纸：捕获权威版本，然后进入可写状态。 */
+    fun openPlanEditor() {
+        if (planStage != PlanStage.Collapsed) return
+        val dateKey = journalDateKey
+        scope.launch {
+            // 在编辑器接受输入之前捕获权威版本：编辑期间完成的同步不会变成草稿基线。
+            val recovery = journalWriteMutex.withLock { store.beginDraft(dateKey) }
+            val committed = store.get(dateKey)
+            content = when (recovery) {
+                JournalDraftRecovery.None -> committed
+                is JournalDraftRecovery.Recovered -> recovery.text
+                is JournalDraftRecovery.Conflict -> recovery.text
+            }
+            journalHasDraft = recovery != JournalDraftRecovery.None
+            planSessionBase = committed
+            journalEditing = true
+            planStage = PlanStage.Editing
+        }
+    }
+
+    /**
+     * 模型回答之后：读到动作就进预览；没读到、或调用失败都退回编辑，原文一字不动。
+     *
+     * 模型内部行为（本地兜底、assumptions、地点）只进 Logcat：用户只需要看到
+     * 「明确时间 / 预计 / 未排期」这三个能理解的结果层级。
+     */
+    fun runPlanExtraction(requestId: String, text: String) {
+        val extractor = planExtractor
+        if (extractor == null) {
+            planStage = PlanStage.Editing
+            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
+            return
+        }
+        // 时间基准由客户端给：模型的提示词只允许用这一份锚点，绝不使用自己的训练时间。
         val now = Instant.now().atZone(APP_ZONE)
-
-        Log.i(
-            LLM_LOG_TAG,
-            "phase=submit request=$requestId inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
-        )
-        thinking = true
-        sheetTasks = emptyList()
-        sheetAssumptions = emptyList()
-        sheetUsedFallback = false
         scope.launch {
             try {
                 // 传输是阻塞的（HttpURLConnection），放到 IO 线程；编排本身不碰界面。
                 val extraction = withContext(Dispatchers.IO) {
-                    planExtractor.extract(
+                    extractor.extract(
                         text = text,
                         now = now,
                         requestId = requestId,
                         threadId = requestId,
-                        locationHint = loc,
+                        locationHint = "",
                         onTelemetry = { Log.i(LLM_LOG_TAG, "phase=telemetry ${it.logLine()}") },
                     )
                 }
-                if (sheetRequestId != requestId || !showScheduleSheet) return@launch
-
+                if (planRequestId != requestId || planStage != PlanStage.Submitting) return@launch
                 val proposal = extraction.proposal
-                if (proposal != null && !proposal.isEmpty) {
-                    Log.i(
-                        LLM_LOG_TAG,
-                        "phase=route request=$requestId result=proposal fallback=${extraction.usedFallback} " +
-                            "topics=${proposal.topics.size} actions=${proposal.actions.size}",
-                    )
-                    sheetTasks = proposal.actions.map { ReviewItem(action = it, selected = it.time.selectedByDefault) }
-                    sheetAssumptions = proposal.assumptions
-                    sheetUsedFallback = extraction.usedFallback
-                    thinking = false
-                    if (extraction.usedFallback) {
-                        // 如实告诉用户这次不是模型给的：本地规则识别能力有限。
-                        Toast.makeText(context, R.string.ai_local_fallback, Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    Log.w(LLM_LOG_TAG, "phase=route request=$requestId result=empty reason=${extraction.reason}")
-                    thinking = false
-                    val understanding = extraction.proposal?.understanding.orEmpty()
+                Log.i(
+                    LLM_LOG_TAG,
+                    "phase=plan_route request=$requestId fallback=${extraction.usedFallback} " +
+                        "actions=${proposal?.actions?.size ?: 0} " +
+                        "assumptions=${proposal?.assumptions?.size ?: 0}",
+                )
+                val actions = proposal?.actions.orEmpty()
+                if (actions.isEmpty()) {
+                    // 没读到待办：退回那张还能写的纸，比让用户在一个空预览上做决定省事。
+                    planStage = PlanStage.Editing
+                    val understanding = proposal?.understanding.orEmpty()
                     Toast.makeText(
                         context,
                         when {
                             extraction.reason == "empty_input" -> context.getString(R.string.ai_empty_input)
-                            // 模型正常回答、只是没有待办：它能说清原因，就直接告诉用户。
                             understanding.isNotBlank() ->
                                 context.getString(R.string.ai_no_task, understanding)
 
@@ -285,20 +305,49 @@ fun MainScreen(
                         },
                         Toast.LENGTH_LONG,
                     ).show()
+                    return@launch
                 }
+                // 低置信度的推测默认不勾选：预览里看得见，但不会顺手落盘。
+                planTasks = actions.map { ReviewItem(action = it, selected = it.time.selectedByDefault) }
+                planStage = PlanStage.Preview
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Exception) {
-                Log.e(LLM_LOG_TAG, "phase=submit request=$requestId result=failed errorType=${error.javaClass.simpleName}", error)
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    thinking = false
-                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                Log.w(LLM_LOG_TAG, "phase=plan_extract request=$requestId result=failed", error)
+                if (planRequestId == requestId && planStage == PlanStage.Submitting) {
+                    planStage = PlanStage.Editing
+                    Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
-    fun confirmTasks(selected: List<ReviewItem>) {
-        val requestId = sheetRequestId.ifBlank { return }
-        if (selected.isEmpty() || thinking) return
+    /**
+     * 对勾：把这段自然语言交给 TPlanner 整理。
+     *
+     * 此刻还没有创建任何日程——所以这里不叫 save：原文先落盘（用户写的东西不丢），
+     * 纸进入 Submitting，模型回答之前没有第二条路径。
+     */
+    fun submitPlanForPreview(text: String) {
+        if (planStage != PlanStage.Editing) return
+        planUnsavedPrompt = false
+        content = text
+        commitJournalDraft(text)
+        val requestId = "plan-${UUID.randomUUID()}"
+        planRequestId = requestId
+        planStage = PlanStage.Submitting
+        runPlanExtraction(requestId, text.trim())
+    }
+
+    /**
+     * 确认添加：一次本地事务落盘，然后先让新卡片亮起、再把纸收回去。
+     *
+     * 顺序是刻意的——用户看到的因果是"刚才那句话被塞进了时间线"，而不是"预览消失了，
+     * 列表刷新了"。
+     */
+    fun confirmPlan(selected: List<ReviewItem>) {
+        val requestId = planRequestId.ifBlank { return }
+        if (selected.isEmpty() || planStage != PlanStage.Preview) return
         val now = System.currentTimeMillis()
         // Every id derives from the persisted requestId, so confirming the same proposal again
         // rewrites exactly these records through the store's upsert path instead of duplicating them.
@@ -315,14 +364,14 @@ fun MainScreen(
                 else -> end?.takeIf { it.isAfter(start) } ?: start
             }
             ScheduleItem(
-                id = stableUntangleId("task:$index", requestId),
+                id = stablePlanTaskId("task:$index", requestId),
                 title = action.title,
                 type = "task",
                 start = start ?: Instant.EPOCH,
                 end = endAt,
                 completed = false,
                 checklist = action.subtasks.mapIndexed { checkIndex, subtask ->
-                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), subtask.text, false)
+                    CheckItem(stablePlanTaskId("task:$index:check:$checkIndex", requestId), subtask.text, false)
                 },
                 colorId = action.colorId,
                 note = action.note,
@@ -334,105 +383,58 @@ fun MainScreen(
                 lng = 0.0,
             )
         }
-        thinking = true
+        planStage = PlanStage.Committing
         scope.launch {
             try {
                 // One local transaction for the whole accepted proposal.
                 eventWriteMutex.withLock { eventStore.saveAll(items) }
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    showScheduleSheet = false
-                    thinking = false
-                    sheetTasks = emptyList()
-                    sheetRequestId = ""
-                    untangleInput = ""
-                    Toast.makeText(
-                        context,
-                        if (items.size == 1) context.getString(R.string.schedule_created_toast, items.first().title)
-                        else context.getString(R.string.schedule_created_multiple_toast, items.size),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
+                revealedEventIds = items.mapTo(mutableSetOf()) { it.id }
+                collapsePlan()
+                planTasks = emptyList()
+                planRequestId = ""
+                Toast.makeText(
+                    context,
+                    if (items.size == 1) context.getString(R.string.schedule_created_toast, items.first().title)
+                    else context.getString(R.string.schedule_created_multiple_toast, items.size),
+                    Toast.LENGTH_SHORT,
+                ).show()
             } catch (e: Exception) {
-                Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    thinking = false
-                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
-                }
+                Log.e(LLM_LOG_TAG, "request=$requestId phase=commit result=failed", e)
+                planStage = PlanStage.Preview
+                Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    /** 打开预览并把 Note 正文直接送去识别——用户不需要再抄一遍。 */
-    fun openSchedulePreview(text: String) {
-        if (planExtractor == null || showScheduleSheet || openingScheduleSheet) return
-        val note = text.trim()
-        if (note.isEmpty()) return
-        openingScheduleSheet = true
-        try {
-            showScheduleSheet = true
-            thinking = false
-            sheetTasks = emptyList()
-            sheetAssumptions = emptyList()
-            sheetUsedFallback = false
-            untangleInput = note
-            submitForExtraction(note)
-        } finally {
-            openingScheduleSheet = false
-        }
-    }
-
-    // ── Note 面板：收起 = mini note，展开 = 上浮编辑面板 ──────────────────
-    var noteSheetOpen by remember { mutableStateOf(false) }
-    var noteUnsavedPrompt by remember { mutableStateOf(false) }
-    // 打开编辑器时那一份已提交的正文：返回时用它判断"有没有未保存的改动"。
-    var noteSessionBase by remember { mutableStateOf("") }
-
-    fun openNoteEditor() {
-        if (noteSheetOpen) return
-        val dateKey = journalDateKey
-        scope.launch {
-            // 在编辑器接受输入之前捕获权威版本：编辑期间完成的同步不会变成草稿基线。
-            val recovery = journalWriteMutex.withLock { store.beginDraft(dateKey) }
-            val committed = store.get(dateKey)
-            content = when (recovery) {
-                JournalDraftRecovery.None -> committed
-                is JournalDraftRecovery.Recovered -> recovery.text
-                is JournalDraftRecovery.Conflict -> recovery.text
-            }
-            journalHasDraft = recovery != JournalDraftRecovery.None
-            noteSessionBase = committed
-            journalEditing = true
-            noteSheetOpen = true
-        }
-    }
-
-    fun closeNoteEditor() {
-        noteSheetOpen = false
-        journalEditing = false
-    }
-
-    /** 对勾：提交当天 Note，并立刻用正文开一次识别预览。 */
-    fun saveNoteAndClose(text: String) {
-        noteUnsavedPrompt = false
-        content = text
-        commitJournalDraft(text)
-        closeNoteEditor()
-        openSchedulePreview(text)
     }
 
     /** 丢弃：把本机排队中的那份文档拿掉，回到上一次被接受的正文。 */
-    fun discardNoteDraft() {
-        noteUnsavedPrompt = false
+    fun discardPlanDraft() {
+        planUnsavedPrompt = false
         journalActions.discardDraft()
-        closeNoteEditor()
+        collapsePlan()
     }
 
-    /** 返回语义由这里统一决定，编辑器与关闭按钮都只是发起请求。 */
-    fun requestNoteExit() {
-        if (content != noteSessionBase) {
-            noteUnsavedPrompt = true
-        } else {
-            closeNoteEditor()
+    /**
+     * 纸上的返回语义由这里统一决定，关闭按钮、返回键、预览里的"返回修改"都只是发起请求：
+     * - Editing 且正文有改动 → 先问要不要保留；
+     * - Editing 无改动 → 直接收纸；
+     * - Submitting → 取消这次识别，回到还能写的纸（原文仍然在）；
+     * - Preview → 回编辑，改一句话重新整理；
+     * - Committing → 已经在写日程，忽略。
+     */
+    fun requestPlanExit() {
+        when (planStage) {
+            PlanStage.Collapsed -> Unit
+            PlanStage.Editing ->
+                if (content != planSessionBase) planUnsavedPrompt = true else collapsePlan()
+
+            PlanStage.Submitting -> {
+                // 让在途结果作废，再回到编辑。
+                planRequestId = ""
+                planStage = PlanStage.Editing
+            }
+
+            PlanStage.Preview -> planStage = PlanStage.Editing
+            PlanStage.Committing -> Unit
         }
     }
 
@@ -569,7 +571,7 @@ fun MainScreen(
         }
     }
 
-    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=今天（时间轴 + Note）, 1=Inbox
+    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=今天（时间轴 + Plan）, 1=Inbox
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
     var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Today.key) }
@@ -666,15 +668,14 @@ fun MainScreen(
             onConflict = { itemConflict = it },
         )
     }
-    val chromeHidden = showScheduleSheet ||
+    val chromeHidden = planStage != PlanStage.Collapsed ||
         showViewSheet ||
         taskWidgetModalVisible ||
         pendingNewItem != null ||
         editingItem != null ||
         itemConflict != null ||
-        // 展开的 Note 面板遮住整屏，底栏、下拉同步与时间轴手势都要让位。
-        noteSheetOpen ||
-        noteUnsavedPrompt
+        // 未保存确认弹窗也压住底栏，避免两个出口同时可用。
+        planUnsavedPrompt
 
     LaunchedEffect(chromeHidden) {
         if (chromeHidden) chromeMode = ChromeMode.Minimal
@@ -705,14 +706,15 @@ fun MainScreen(
         )
     }
 
-    // 合并后的主界面：一天的纵向时间轴 + 底部 mini note。点开 note 才升起编辑面板，
+    // 合并后的主界面：一天的纵向时间轴 + 底部那张纸。点开纸才升起编辑面板，
     // 所以"看今天"和"写今天"不再是两个页面。
-    // 顶部没有日期条，也没有加号：唯一的写入口是底部 mini note。
+    // 顶部没有日期条，也没有加号：唯一的写入口是底部的 Plan。
     val dayCardContent: @Composable () -> Unit = {
         Box(Modifier.fillMaxSize()) {
             TimelineScreen(
                 state = timelineState,
                 events = events,
+                revealedEventIds = revealedEventIds,
                 onEventClick = ::openItem,
                 onAddTaskAt = ::beginTaskAt,
                 onEventMove = { event, newStart, newEnd ->
@@ -729,17 +731,17 @@ fun MainScreen(
                         eventWriteMutex.withLock { eventStore.save(updated, original = event) }
                     }
                 },
-                notePanel = {
-                    MiniNoteBar(
-                        noteText = content,
-                        placeholder = stringResource(R.string.journal_edit_hint),
-                        onOpen = ::openNoteEditor,
+                planPanel = {
+                    MiniPlanBar(
+                        planText = content,
+                        placeholder = stringResource(R.string.plan_edit_hint),
+                        onOpen = ::openPlanEditor,
                         modifier = Modifier.padding(
                             start = Tokens.Semantic.Spacing.Block.dp,
                             end = Tokens.Semantic.Spacing.Block.dp,
                             top = Tokens.Semantic.Spacing.Inline.dp,
-                            // 悬浮导航岛占据屏幕底部，mini note 必须停在它上面。
-                            bottom = Tokens.Component.Note.MiniNoteClearance.dp,
+                            // 悬浮导航岛占据屏幕底部，Plan 条必须停在它上面。
+                            bottom = Tokens.Component.Plan.BarClearance.dp,
                         ),
                     )
                 },
@@ -779,7 +781,7 @@ fun MainScreen(
     val isUserGestureSyncing =
         syncOperation.reason == SyncReason.USER_GESTURE && syncOperation.phase.isRunning
     // 根节点不加系统栏内边距：让位分给各自的使用方（主界面卡片用 systemBars，
-    // Note 面板用 systemBars ∪ ime），否则键盘顶起时会叠加两次，把布局顶乱。
+    // Plan 面板用 systemBars ∪ ime），否则键盘顶起时会叠加两次，把布局顶乱。
     Box(Modifier.fillMaxSize().background(BG)) {
         TPlannerPullToSync(
             isSyncing = isUserGestureSyncing,
@@ -790,69 +792,25 @@ fun MainScreen(
             enabled = !chromeHidden,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (showScheduleSheet) {
-                // 预览界面：识别结果先在这里过一眼，确认之后才落盘。
-                UntangleSheet(
-                    requestId = sheetRequestId,
-                    prefillLocation = prefillLocation,
-                    locationLoading = false,
-                    initialText = untangleInput,
-                    thinking = thinking,
-                    tasks = sheetTasks,
-                    assumptions = sheetAssumptions,
-                    usedFallback = sheetUsedFallback,
-                    onTextChange = { text ->
-                        untangleInput = text
-                    },
-                    onToggleSelected = { index ->
-                        sheetTasks = sheetTasks.mapIndexed { position, item ->
-                            if (position == index) item.copy(selected = !item.selected) else item
-                        }
-                    },
-                    onToggleTime = { index ->
-                        // "只去掉时间、保留任务"：不新建机制，复用既有的"未排期"语义。
-                        sheetTasks = sheetTasks.mapIndexed { position, item ->
-                            if (position == index) item.copy(clearTime = !item.clearTime) else item
-                        }
-                    },
-                    onDismiss = {
-                        Log.d(LLM_LOG_TAG, "phase=sheet_close reason=dismissed")
-                        showScheduleSheet = false
-                        thinking = false
-                        sheetTasks = emptyList()
-                        sheetAssumptions = emptyList()
-                        sheetUsedFallback = false
-                        sheetRequestId = ""
-                        untangleInput = ""
-                    },
-                    onSubmit = submitForExtraction,
-                    onConfirmTasks = ::confirmTasks,
-                    // 系统栏与输入法只在这里让位一次，面板内部不再自己加。
-                    modifier = Modifier.windowInsetsPadding(
-                        WindowInsets.systemBars.union(WindowInsets.ime),
-                    ),
-                )
-            } else {
-                MainLayout(
-                    phoneTab = phoneTab,
-                    onPhoneTabSelected = { selected ->
-                        phoneTab = selected
+            MainLayout(
+                phoneTab = phoneTab,
+                onPhoneTabSelected = { selected ->
+                    phoneTab = selected
+                    primaryNavigationGeneration++
+                    chromeMode = ChromeMode.PrimaryNavigation
+                },
+                onViewSheetRequest = { showViewSheet = true },
+                chromeHidden = chromeHidden,
+                chromeMode = chromeMode,
+                onNavigationRequested = {
+                    if (!chromeHidden) {
                         primaryNavigationGeneration++
                         chromeMode = ChromeMode.PrimaryNavigation
-                    },
-                    onViewSheetRequest = { showViewSheet = true },
-                    chromeHidden = chromeHidden,
-                    chromeMode = chromeMode,
-                    onNavigationRequested = {
-                        if (!chromeHidden) {
-                            primaryNavigationGeneration++
-                            chromeMode = ChromeMode.PrimaryNavigation
-                        }
-                    },
-                    taskCard = taskCardContent,
-                    dayCard = dayCardContent,
-                )
-            }
+                    }
+                },
+                taskCard = taskCardContent,
+                dayCard = dayCardContent,
+            )
         }
         syncFeedback?.let { feedback ->
             TPlannerSyncFeedback(
@@ -862,20 +820,44 @@ fun MainScreen(
                     .padding(top = 9.dp),
             )
         }
-        // Note 面板浮在整个主界面之上（含导航岛），所以它必须是根 Box 的兄弟节点。
-        NoteSheet(
-            visible = noteSheetOpen,
+        // 纸浮在整个主界面之上（含导航岛），所以它必须是根 Box 的兄弟节点。
+        // 写、整理中、预览、提交中都是这一张纸的连续状态。
+        PlanSheet(
+            stage = planStage,
             value = content,
             onValueChange = { text ->
                 content = text
                 saveJournalDraft(text)
             },
-            placeholder = stringResource(R.string.journal_edit_hint),
-            onSave = { text -> saveNoteAndClose(text) },
-            onExitRequest = ::requestNoteExit,
+            placeholder = stringResource(R.string.plan_edit_hint),
+            onSubmit = { text -> submitPlanForPreview(text) },
+            onExitRequest = ::requestPlanExit,
             modifier = Modifier.fillMaxSize(),
+            preview = {
+                PlanPreview(
+                    tasks = planTasks,
+                    committing = planStage == PlanStage.Committing,
+                    onToggleSelected = { index ->
+                        planTasks = planTasks.mapIndexed { position, item ->
+                            if (position == index) item.copy(selected = !item.selected) else item
+                        }
+                    },
+                    onToggleTime = { index ->
+                        // "不要这个时间、保留任务"：复用既有的"未排期"语义，不新建机制。
+                        planTasks = planTasks.mapIndexed { position, item ->
+                            if (position == index) item.copy(clearTime = !item.clearTime) else item
+                        }
+                    },
+                    onEditRequest = ::requestPlanExit,
+                    onConfirm = ::confirmPlan,
+                )
+            },
         )
     }
+
+    // 纸摊开时系统返回也交给纸：预览回落回编辑，编辑走未保存确认。
+    // 编辑器自己那一层 BackHandler 更靠内，编辑态优先由它处理输入法。
+    BackHandler(enabled = planStage != PlanStage.Collapsed) { requestPlanExit() }
 
     // ── Task view picker ───────────────────────────────────────────────
     if (showViewSheet) {
@@ -1016,13 +998,13 @@ fun MainScreen(
         )
     }
 
-    // ── Note 未保存返回 ─────────────────────────────────────────────────
+    // ── Plan 未保存返回 ─────────────────────────────────────────────────
     // 草稿本身是持久的：这里问的不是"要不要落盘"，而是"要不要提交成这一天的正文"。
-    if (noteUnsavedPrompt) {
-        NoteUnsavedDialog(
-            onKeepEditing = { noteUnsavedPrompt = false },
-            onDiscard = ::discardNoteDraft,
-            onSave = { saveNoteAndClose(content) },
+    if (planUnsavedPrompt) {
+        PlanUnsavedDialog(
+            onKeepEditing = { planUnsavedPrompt = false },
+            onDiscard = ::discardPlanDraft,
+            onSubmit = { submitPlanForPreview(content) },
         )
     }
 
@@ -1105,8 +1087,10 @@ private fun parseContractInstant(iso: String): Instant? = try {
     java.time.OffsetDateTime.parse(iso).toInstant()
 } catch (_: Exception) { null }
 
-private fun stableUntangleId(namespace: String, requestId: String): String =
+private fun stablePlanTaskId(namespace: String, requestId: String): String =
     UUID.nameUUIDFromBytes(
+        // 盐值属于"已经写进用户数据里的东西"：改名可以，这个字节串不能动，
+        // 否则同一份提案会算出新 id，旧记录旁边多出一份重复任务。
         "tplanner:untangle:$namespace:$requestId".toByteArray(Charsets.UTF_8)
     ).toString()
 

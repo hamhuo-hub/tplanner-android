@@ -104,14 +104,6 @@ object TPlannerLightTokens {
                 const val Time: Float = 9f
             }
         }
-        object Note {
-            const val MiniNoteClearance: Float = 64f
-            const val MiniNoteHeight: Float = 56f
-            const val MiniNoteRadius: Float = 12f
-            const val SheetBottomBarHeight: Float = 56f
-            const val SheetRadius: Float = 16f
-            const val SheetTopGap: Float = 48f
-        }
         object Panel {
             const val Background: Int = 0xFFF6F8FA.toInt()
             const val Edge: Int = 0xFFF6F8F2.toInt()
@@ -124,6 +116,14 @@ object TPlannerLightTokens {
             const val ShadowSpread: Float = 0f
             const val ShadowX: Float = 0f
             const val ShadowY: Float = 2f
+        }
+        object Plan {
+            const val BarClearance: Float = 64f
+            const val BarHeight: Float = 56f
+            const val BarRadius: Float = 12f
+            const val SheetBottomBarHeight: Float = 56f
+            const val SheetRadius: Float = 16f
+            const val SheetTopGap: Float = 48f
         }
         object Task {
             const val CompletedForeground: Int = 0xFF606670.toInt()

@@ -23,7 +23,7 @@ import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.SURFACE2
 
 /**
- * One app-level pull gesture shared by Notes, Inbox, and Timeline.
+ * One app-level pull gesture shared by Plan, Inbox, and Timeline.
  *
  * 下拉手势通过 Modifier 接入,没有圆形容器或指示器。同步进行中只显示一个
  * 静态「正在同步…」pill;完成/失败统一由顶部的 sync complete/failed 反馈呈现。

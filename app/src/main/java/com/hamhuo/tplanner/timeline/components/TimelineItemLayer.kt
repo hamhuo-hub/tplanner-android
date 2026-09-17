@@ -22,6 +22,7 @@ internal fun TimelineItemLayer(
     renderSpecs: List<TimelineEventRenderSpec>,
     now: Instant,
     highlightedEventIds: Set<String>,
+    revealedEventIds: Set<String>,
     visibleDays: List<LocalDate>,
     zone: ZoneId,
     dayWidthPx: Float,
@@ -56,6 +57,7 @@ internal fun TimelineItemLayer(
                 viewportTopPx = viewportTopPx,
                 viewportHeightPx = viewportHeightPx,
                 draggable = spec.draggable,
+                revealed = event.id in revealedEventIds,
                 modifier = Modifier
                     .offset(x = spec.x, y = spec.top)
                     .width(spec.width)

@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.R
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.designsystem.TPlannerGeometry
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 import com.hamhuo.tplanner.designsystem.TPlannerTypography
 import com.hamhuo.tplanner.timeline.calculateTimelineSnappedMove
 import com.hamhuo.tplanner.timeline.hasTimelineRecurrenceMarker
@@ -56,6 +60,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+/** 新卡片出现的起点：只差一点点，够看出"它是刚长出来的"，又不喧哗。 */
+private const val RevealMinScale = 0.96f
+private const val RevealMinAlpha = 0.5f
 
 @Composable
 internal fun TimelineItemCard(
@@ -76,12 +84,24 @@ internal fun TimelineItemCard(
     viewportHeightPx: Float,
     draggable: Boolean,
     modifier: Modifier,
+    // 刚刚在预览里确认的那几条：从 0.96 长到 1.0，让"这句话被塞进了时间线"看得见。
+    revealed: Boolean = false,
     onClick: () -> Unit,
     onConflictClick: () -> Unit,
     onDraggingChange: (Boolean) -> Unit,
     onDrop: (Instant, Instant) -> Unit,
 ) {
     val conflictDescription = stringResource(R.string.timeline_conflict_count, conflictCount)
+    val reveal = remember { Animatable(if (revealed) 0f else 1f) }
+    LaunchedEffect(revealed) {
+        if (revealed) reveal.animateTo(1f, tween(Tokens.Semantic.Motion.Slow.toInt()))
+    }
+    val revealModifier = Modifier.graphicsLayer {
+        val grow = RevealMinScale + (1f - RevealMinScale) * reveal.value
+        scaleX = grow
+        scaleY = grow
+        alpha = RevealMinAlpha + (1f - RevealMinAlpha) * reveal.value
+    }
     val startTime = remember(event.start, zone) {
         event.start.atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
     }
@@ -106,7 +126,7 @@ internal fun TimelineItemCard(
         viewportTopPx = viewportTopPx,
         viewportHeightPx = viewportHeightPx,
         draggable = draggable,
-        modifier = modifier,
+        modifier = modifier.then(revealModifier),
         onClick = onClick,
         onDraggingChange = onDraggingChange,
         onDrop = onDrop,

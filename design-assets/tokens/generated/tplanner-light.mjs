@@ -104,14 +104,6 @@ export const lightTokens = {
         "time": 9
       }
     },
-    "note": {
-      "miniNoteClearance": 64,
-      "miniNoteHeight": 56,
-      "miniNoteRadius": 12,
-      "sheetBottomBarHeight": 56,
-      "sheetRadius": 16,
-      "sheetTopGap": 48
-    },
     "panel": {
       "background": "#F6F8FA",
       "edge": "#F6F8F2",
@@ -124,6 +116,14 @@ export const lightTokens = {
       "shadowSpread": 0,
       "shadowX": 0,
       "shadowY": 2
+    },
+    "plan": {
+      "barClearance": 64,
+      "barHeight": 56,
+      "barRadius": 12,
+      "sheetBottomBarHeight": 56,
+      "sheetRadius": 16,
+      "sheetTopGap": 48
     },
     "task": {
       "completedForeground": "#606670",
