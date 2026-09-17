@@ -22,6 +22,7 @@ import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -47,6 +48,14 @@ internal object WatchV5Link {
     private val watchdog = ScheduledThreadPoolExecutor(1) { runnable ->
         Thread(runnable, "tplanner-v5-link-watchdog").apply { isDaemon = true }
     }.apply { removeOnCancelPolicy = true }
+
+    /**
+     * Data Layer callbacks are delivered on the main thread, so every blocking GMS read has to
+     * happen here instead. One thread is enough: an exchange has one outstanding response.
+     */
+    private val dataLayerIo = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "tplanner-v5-datalayer-io").apply { isDaemon = true }
+    }
 
     fun snapshot(context: Context, deviceId: String): JSONObject =
         exchange(context, deviceId, "snapshot", null)
@@ -79,10 +88,18 @@ internal object WatchV5Link {
             for (event in events) {
                 if (event.type != DataEvent.TYPE_CHANGED) continue
                 if (event.dataItem.uri.path != responsePath) continue
-                val body = runCatching { readResponse(client, event) }
-                    .onFailure { Log.w(TAG, "Unreadable relay response", it) }
-                    .getOrNull() ?: continue
-                if (received.compareAndSet(null, body)) latch.countDown()
+                val asset = DataMapItem.fromDataItem(event.dataItem)
+                    .dataMap
+                    .getAsset(WatchV5Protocol.ASSET_KEY) ?: continue
+                dataLayerIo.execute {
+                    runCatching { readResponse(client, asset) }
+                        .onSuccess { body -> if (received.compareAndSet(null, body)) latch.countDown() }
+                        .onFailure { error ->
+                            if (error is InterruptedException) Thread.currentThread().interrupt()
+                            Log.w(TAG, "Unreadable relay response", error)
+                            latch.countDown()
+                        }
+                }
             }
         }
         return try {
@@ -119,8 +136,8 @@ internal object WatchV5Link {
         }
     }
 
-    private fun readResponse(client: DataClient, event: com.google.android.gms.wearable.DataEvent): JSONObject? {
-        val asset = DataMapItem.fromDataItem(event.dataItem).dataMap.getAsset(WatchV5Protocol.ASSET_KEY) ?: return null
+    /** Blocking GMS read; the asset was already extracted on the callback thread. */
+    private fun readResponse(client: DataClient, asset: Asset): JSONObject {
         val stream = Tasks.await(client.getFdForAsset(asset), IO_TIMEOUT_SECONDS, TimeUnit.SECONDS).inputStream
         val bytes = stream.use { input ->
             val buffer = java.io.ByteArrayOutputStream()
