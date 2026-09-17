@@ -12,14 +12,17 @@
     <string name="label_new">New</string>
 
     <!-- Tabs / section titles -->
-    <string name="tab_journal">Notes</string>
-    <string name="tab_timeline">Timeline</string>
     <string name="timeline_today">Today</string>
-    <string name="timeline_previous_days">Previous day</string>
-    <string name="timeline_next_days">Next day</string>
     <string name="timeline_conflict_count">Conflicts with %1$d items</string>
     <string name="timeline_drag_hint">Long press to move · snaps every 10 min</string>
     <string name="timeline_recurring_task">Recurring task</string>
+    <string name="note_sheet_title">Note</string>
+    <string name="note_open">Open Note</string>
+    <string name="note_save">Save Note</string>
+    <string name="note_discard">Discard</string>
+    <string name="note_keep_editing">Keep editing</string>
+    <string name="note_unsaved_title">Note not saved yet</string>
+    <string name="note_unsaved_message">Your changes are only on this device. Use the check mark to save this day’s note, or discard to go back to the last saved version.</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>
     <string name="task_view_picker_title">Filters</string>
@@ -71,7 +74,6 @@
     <!-- Accessibility content descriptions -->
     <string name="cd_back">Back</string>
     <string name="cd_delete">Delete</string>
-    <string name="cd_add_event">Add item</string>
 
     <!-- Sync -->
     <string name="sync_success_with_name">Synced · %1$s</string>
@@ -91,6 +93,7 @@
     <string name="sync_reconnect">Reset local data &amp; resync</string>
     <string name="unknown_error">Unknown error</string>
     <string name="schedule_created_toast">Schedule created: %1$s</string>
+    <string name="schedule_created_multiple_toast">Created %1$d tasks</string>
     <string name="schedule_create_failed_toast">Could not create schedule. Please try again.</string>
     <string name="ai_service_unavailable">AI service is not configured or could not connect. Check the API key or network and try again.</string>
     <string name="ai_local_fallback">The model is unavailable; local rules were used instead. Expect a rougher result — please review before confirming.</string>
@@ -98,15 +101,12 @@
     <string name="ai_empty_input">Nothing to read yet — write something first.</string>
     <string name="location_locating">Locating…</string>
     <string name="location_unavailable">Location unavailable</string>
-    <string name="ai_schedule_extraction">AI schedule extraction</string>
     <string name="untangle_title_confirm">Add tasks?</string>
     <string name="untangle_confirm_title">Create these extracted tasks?</string>
     <string name="untangle_no_time">No time set</string>
     <string name="untangle_checklist_label">Checklist</string>
     <string name="untangle_confirm_action">Add tasks</string>
-    <string name="untangle_created_multiple_toast">Created %1$d tasks</string>
     <!-- Date patterns (DateTimeFormatter pattern syntax) -->
-    <string name="date_pattern_full">MMMM d, yyyy</string>
     <string name="date_pattern_month_day_weekday">MMM d · E</string>
     <string name="date_pattern_month_day_time">MMM d, HH:mm</string>
     <string name="journal_edit_hint">Capture today’s thoughts and ideas…</string>

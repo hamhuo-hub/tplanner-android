@@ -1,6 +1,7 @@
 package com.hamhuo.tplanner.timeline
 
 import androidx.compose.ui.unit.dp
+import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -9,9 +10,12 @@ internal object TimelineGeometry {
     const val visibleDayCount = 1
     const val snapMinutes = 10
 
-    val timeGutterWidth = 43.dp
+    /**
+     * 刻度写成旋转 90° 的数字，横向只需要容纳一行字高；宽度来自共享令牌，
+     * 拖拽、分列与长按换算都读同一个值，不会各自漂移。
+     */
+    val timeGutterWidth = TPlannerLightTokens.Component.Agenda.TimeGutterWidth.dp
     val hourHeight = 72.dp
-    val dayHeaderHeight = 58.dp
     val minEventHeight = 24.dp
 
     val eventHorizontalPadding = 3.dp

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -125,6 +124,8 @@ fun UntangleSheet(
     onDismiss: () -> Unit,
     onSubmit: (text: String) -> Unit,
     onConfirmTasks: (List<ReviewItem>) -> Unit,
+    // 系统栏与输入法内边距由调用方一次给出：这里再叠一次会把键盘顶起时的布局顶乱。
+    modifier: Modifier = Modifier,
 ) {
     var text by remember(requestId) { mutableStateOf(initialText) }
     val focusRequester = remember { FocusRequester() }
@@ -132,7 +133,7 @@ fun UntangleSheet(
     LaunchedEffect(showEditor) { if (showEditor) focusRequester.requestFocus() }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(BG).imePadding().padding(horizontal = 20.dp)
+        modifier = modifier.fillMaxSize().background(BG).padding(horizontal = 20.dp)
     ) {
         // ── Top bar ────────────────────────────────────────────────────
         Row(

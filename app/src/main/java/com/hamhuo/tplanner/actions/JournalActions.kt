@@ -63,6 +63,27 @@ class JournalActions(
         }
     }
 
+    /**
+     * 丢弃当天未提交的改动（未保存弹窗里的「丢弃」）。
+     *
+     * 与冲突处理不同，这里没有服务器冲突要解决：只是把本机排队中的那份文档拿掉，
+     * 让已安装的记录重新生效。
+     */
+    fun discardDraft() {
+        val dateKey = getDateKey()
+        scope.launch {
+            try {
+                mutex.withLock { store.discardDraft(dateKey) }
+                if (getDateKey() == dateKey) {
+                    setHasDraft(false)
+                    setContent(store.get(dateKey))
+                }
+            } catch (_: Exception) {
+                Toast.makeText(context, "无法丢弃草稿，请重试", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     fun resolveOverwrite(details: DraftConflict) {
         val overwritten = try {
             kotlinx.coroutines.runBlocking {

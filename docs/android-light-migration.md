@@ -60,3 +60,29 @@
 - Wear APK：`wear/build/outputs/apk/debug/wear-debug.apk`
 - 集成日志：`build/android-light-final-build.log`
 - 生成/核对命令：`python scripts/generate-design-tokens.py --android` / `python scripts/generate-design-tokens.py --check --android`。以上 APK/日志属于本地产物，不纳入 Git。
+
+## 后续批次：手机主界面合并（时间轴 + Note）
+
+上面记录的 JSON SHA 属于浅色迁移那一批。之后手机主界面把「随手记」与「时间线」合并成同一屏的一天：
+
+- 手机底栏只剩 `今天` / `Inbox` 两格（`PhoneTabBar`）；同步设置与同步日志浮层抽成
+  `MainScreen` 的 `syncOverlays`，同步设置入口是时间轴右上角的悬浮按钮。
+- 按屏宽分叉的"宽屏两栏"排版已删除（`isPhone` / `screenWidthDp < 840` / `notesCard` /
+  `NotesHeader` 一并移除）。折叠屏与大屏暂时复用同一套排版；更通用的自适应方案以后单独
+  设计，不在这里预留分叉。
+- 这一批继续删除：顶部日期条（`TimelineDayHeader`、`TimelineDateWindow`、日期选择器）、
+  时间轴右下角的加号（`TimelineAddButton`）、note 面板里的 AI 提取按钮。状态栏改为沉浸隐藏。
+- AI 提取入口改为「保存 Note 即自动开预览」：`UntangleSheet` 保留（识别结果必须先确认才落盘），
+  只是不再需要用户自己按提取、也不再需要手抄一遍正文。位置提示暂不采集，面板照实显示"未获取位置"。
+- 系统栏与输入法内边距只在各自使用方让位一次：主界面卡片用 `systemBars`，Note 面板用
+  `systemBars ∪ ime`，预览界面（`UntangleSheet`）由调用方传入同一组内边距，根节点不再统一加
+  （此前两处叠加会把键盘顶起时的布局顶乱）。
+- 令牌变化：删除 `component.note.scrimOpacity`（面板改为不透明），导出 401 个令牌。
+- 时间轴刻度改为旋转 90° 的纵向数字，刻度宽度取新令牌 `component.agenda.timeGutterWidth`；
+  日期条左侧锚点改用 `TimelineGeometry.dayAnchorWidth`，不再复用刻度宽度。
+- 新增 `component.note.*`（mini note 高度/圆角/让位高度、面板上圆角、顶缝、保存条高度、
+  遮罩透明度），对应 `ui/DayNotePanel.kt` 的三种状态。颜色仍全部来自既有语义令牌，没有
+  新增色值，因此对比度配对数量不变（54 必需 + 2 诊断）。
+- 令牌源在本批被修改：`design-assets/tokens/tplanner-light.tokens.json`
+  SHA-256 `21FD2FB77E69189A72C23D39446283D7C1FFD756A84DF608BCA01C1831D55EC1`，
+  导出 402 个令牌。改动后必须重跑生成器与品牌检查。

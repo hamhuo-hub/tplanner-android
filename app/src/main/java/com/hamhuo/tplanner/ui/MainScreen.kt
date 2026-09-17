@@ -1,46 +1,31 @@
 package com.hamhuo.tplanner
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,18 +39,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hamhuo.tplanner.ai.PlanExtractor
 import com.hamhuo.tplanner.timeline.TimelineScreen
+import com.hamhuo.tplanner.timeline.rememberTimelineState
 import com.hamhuo.tplanner.ui.SyncLogPanel
 import com.hamhuo.tplanner.ui.components.TPlannerPullToSync
 import com.hamhuo.tplanner.ui.components.TPlannerSyncFeedback
@@ -83,34 +62,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
 private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
-private const val LOCATION_CAPTURE_WAIT_MILLIS = 12_000L
 private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
-
-private enum class PhoneLocationState {
-    IDLE,
-    LOCATING,
-    READY,
-    UNAVAILABLE,
-}
-
-private fun hasPhoneLocationPermission(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-    ) == PackageManager.PERMISSION_GRANTED ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
 
 internal enum class ChromeMode {
     Minimal,
     PrimaryNavigation,
-    TimelineNavigation,
 }
 
 private fun Throwable.locationForLog(): String {
@@ -151,24 +112,26 @@ fun MainScreen(
     }
     val journalWriteMutex = remember { Mutex() }
     val eventWriteMutex = remember { Mutex() }
-    // Freeze only while editing/recovering a draft. An Activity kept alive across midnight should
-    // move to the new day once the previous session has safely committed.
+    // 编辑或恢复草稿期间不推进日期。运行中的 Activity 跨过零点时，只要界面本来就停在
+    // 「今天」，就先提交前一天再前进；用户主动翻到别的日期时保持原样。
     var journalEditing by remember { mutableStateOf(false) }
-    var journalDate by remember {
-        mutableStateOf(
-            runCatching { java.time.LocalDate.parse(initialJournalDate) }
-                .getOrDefault(appToday())
-        )
+    // 主界面同屏只展示一天：时间轴停在哪天，Note 就编辑哪天的内容。
+    val initialTimelineDay = remember(initialJournalDate) {
+        runCatching { LocalDate.parse(initialJournalDate) }.getOrDefault(appToday())
     }
+    val timelineState = rememberTimelineState(APP_ZONE, initialTimelineDay)
+    val journalDate = timelineState.firstDay
     val journalDateKey = journalDate.toString()
     val currentJournalDateKey by rememberUpdatedState(journalDateKey)
 
+    // 跨零点只在界面本来就停在「今天」时前进；用户主动翻到别的日期时不会被拉回来。
+    // 编辑中或还有未提交草稿时先提交前一天，绝不静默丢弃。
+    var anchoredToday by remember { mutableStateOf(appToday()) }
     LaunchedEffect(journalEditing, journalDate) {
         while (!journalEditing) {
-            val today = appToday()
             val rollover = planJournalDayRollover(
-                displayedDate = journalDate,
-                today = today,
+                displayedDate = anchoredToday,
+                today = appToday(),
                 isEditing = journalEditing,
                 hasDraft = journalHasDraft,
                 content = content,
@@ -203,15 +166,17 @@ fun MainScreen(
                 } ?: true
 
                 if (canAdvance) {
-                    val nextContent = store.get(rollover.nextDate.toString())
-                    journalDate = rollover.nextDate
-                    content = nextContent
-                    journalHasDraft = false
-                    journalConflict = rolloverConflict
-                        ?: journalConflict?.takeUnless {
-                            it.date == rollover.previousDate.toString()
-                        }
-                    break
+                    anchoredToday = rollover.nextDate
+                    if (journalDate == rollover.previousDate) {
+                        val nextContent = store.get(rollover.nextDate.toString())
+                        timelineState.goToDate(rollover.nextDate)
+                        content = nextContent
+                        journalHasDraft = false
+                        journalConflict = rolloverConflict
+                            ?: journalConflict?.takeUnless {
+                                it.date == rollover.previousDate.toString()
+                            }
+                    }
                 }
             }
             delay(JOURNAL_DAY_POLL_MILLIS)
@@ -241,6 +206,235 @@ fun MainScreen(
 
     fun saveJournalDraft(text: String) = journalActions.saveDraft(text)
     fun commitJournalDraft(text: String) = journalActions.commitDraft(text)
+
+    // ── AI 提取：保存 Note 之后自动开一次识别预览 ─────────────────────────
+    // 识别一定会跑，所以 note 面板里没有"提取"按钮；但结果必须先给用户过一眼，
+    // 预览界面（UntangleSheet）不是可删的东西：确认之前不落盘。
+    var showScheduleSheet by remember { mutableStateOf(false) }
+    var openingScheduleSheet by remember { mutableStateOf(false) }
+    var thinking by remember { mutableStateOf(false) }
+    var sheetTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
+    var sheetAssumptions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sheetUsedFallback by remember { mutableStateOf(false) }
+    var sheetRequestId by remember { mutableStateOf("") }
+    var untangleInput by remember { mutableStateOf("") }
+    // 位置提示暂时不再采集：识别改由保存 Note 触发，弹权限框会更打扰；
+    // 预览界面照实显示"未获取位置"，不假装知道用户在哪。
+    val prefillLocation = ""
+
+    // 时间基准由客户端给：模型的提示词只允许用这一份锚点，绝不使用自己的训练时间。
+    val submitForExtraction: (String) -> Unit = lambda@{ text ->
+        if (thinking || planExtractor == null) return@lambda
+        val requestId = "ui-${UUID.randomUUID()}"
+        sheetRequestId = requestId
+        untangleInput = text
+        val loc = prefillLocation.ifBlank { "" }
+        val now = Instant.now().atZone(APP_ZONE)
+
+        Log.i(
+            LLM_LOG_TAG,
+            "phase=submit request=$requestId inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
+        )
+        thinking = true
+        sheetTasks = emptyList()
+        sheetAssumptions = emptyList()
+        sheetUsedFallback = false
+        scope.launch {
+            try {
+                // 传输是阻塞的（HttpURLConnection），放到 IO 线程；编排本身不碰界面。
+                val extraction = withContext(Dispatchers.IO) {
+                    planExtractor.extract(
+                        text = text,
+                        now = now,
+                        requestId = requestId,
+                        threadId = requestId,
+                        locationHint = loc,
+                        onTelemetry = { Log.i(LLM_LOG_TAG, "phase=telemetry ${it.logLine()}") },
+                    )
+                }
+                if (sheetRequestId != requestId || !showScheduleSheet) return@launch
+
+                val proposal = extraction.proposal
+                if (proposal != null && !proposal.isEmpty) {
+                    Log.i(
+                        LLM_LOG_TAG,
+                        "phase=route request=$requestId result=proposal fallback=${extraction.usedFallback} " +
+                            "topics=${proposal.topics.size} actions=${proposal.actions.size}",
+                    )
+                    sheetTasks = proposal.actions.map { ReviewItem(action = it, selected = it.time.selectedByDefault) }
+                    sheetAssumptions = proposal.assumptions
+                    sheetUsedFallback = extraction.usedFallback
+                    thinking = false
+                    if (extraction.usedFallback) {
+                        // 如实告诉用户这次不是模型给的：本地规则识别能力有限。
+                        Toast.makeText(context, R.string.ai_local_fallback, Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Log.w(LLM_LOG_TAG, "phase=route request=$requestId result=empty reason=${extraction.reason}")
+                    thinking = false
+                    val understanding = extraction.proposal?.understanding.orEmpty()
+                    Toast.makeText(
+                        context,
+                        when {
+                            extraction.reason == "empty_input" -> context.getString(R.string.ai_empty_input)
+                            // 模型正常回答、只是没有待办：它能说清原因，就直接告诉用户。
+                            understanding.isNotBlank() ->
+                                context.getString(R.string.ai_no_task, understanding)
+
+                            else -> context.getString(R.string.ai_service_unavailable)
+                        },
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            } catch (error: Exception) {
+                Log.e(LLM_LOG_TAG, "phase=submit request=$requestId result=failed errorType=${error.javaClass.simpleName}", error)
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    thinking = false
+                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun confirmTasks(selected: List<ReviewItem>) {
+        val requestId = sheetRequestId.ifBlank { return }
+        if (selected.isEmpty() || thinking) return
+        val now = System.currentTimeMillis()
+        // Every id derives from the persisted requestId, so confirming the same proposal again
+        // rewrites exactly these records through the store's upsert path instead of duplicating them.
+        val items = selected.mapIndexed { index, review ->
+            val action = review.action
+            val time = action.time
+            val start = if (review.clearTime) null else time.start?.let(::parseContractInstant)
+            val end = if (review.clearTime) null else time.end?.let(::parseContractInstant)
+            // A task without a stated start keeps no start: never fabricate one. A deadline-only
+            // action keeps its DUE and is stored as scheduled.
+            val endAt = when {
+                start == null && end == null -> Instant.EPOCH
+                start == null -> end!!
+                else -> end?.takeIf { it.isAfter(start) } ?: start
+            }
+            ScheduleItem(
+                id = stableUntangleId("task:$index", requestId),
+                title = action.title,
+                type = "task",
+                start = start ?: Instant.EPOCH,
+                end = endAt,
+                completed = false,
+                checklist = action.subtasks.mapIndexed { checkIndex, subtask ->
+                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), subtask.text, false)
+                },
+                colorId = action.colorId,
+                note = action.note,
+                deletedAt = 0L,
+                updatedAt = now,
+                scheduled = start != null || end != null,
+                // 识别不再采集位置，落盘的就是"未设置位置"。
+                lat = 0.0,
+                lng = 0.0,
+            )
+        }
+        thinking = true
+        scope.launch {
+            try {
+                // One local transaction for the whole accepted proposal.
+                eventWriteMutex.withLock { eventStore.saveAll(items) }
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    showScheduleSheet = false
+                    thinking = false
+                    sheetTasks = emptyList()
+                    sheetRequestId = ""
+                    untangleInput = ""
+                    Toast.makeText(
+                        context,
+                        if (items.size == 1) context.getString(R.string.schedule_created_toast, items.first().title)
+                        else context.getString(R.string.schedule_created_multiple_toast, items.size),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
+                if (showScheduleSheet && sheetRequestId == requestId) {
+                    thinking = false
+                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    /** 打开预览并把 Note 正文直接送去识别——用户不需要再抄一遍。 */
+    fun openSchedulePreview(text: String) {
+        if (planExtractor == null || showScheduleSheet || openingScheduleSheet) return
+        val note = text.trim()
+        if (note.isEmpty()) return
+        openingScheduleSheet = true
+        try {
+            showScheduleSheet = true
+            thinking = false
+            sheetTasks = emptyList()
+            sheetAssumptions = emptyList()
+            sheetUsedFallback = false
+            untangleInput = note
+            submitForExtraction(note)
+        } finally {
+            openingScheduleSheet = false
+        }
+    }
+
+    // ── Note 面板：收起 = mini note，展开 = 上浮编辑面板 ──────────────────
+    var noteSheetOpen by remember { mutableStateOf(false) }
+    var noteUnsavedPrompt by remember { mutableStateOf(false) }
+    // 打开编辑器时那一份已提交的正文：返回时用它判断"有没有未保存的改动"。
+    var noteSessionBase by remember { mutableStateOf("") }
+
+    fun openNoteEditor() {
+        if (noteSheetOpen) return
+        val dateKey = journalDateKey
+        scope.launch {
+            // 在编辑器接受输入之前捕获权威版本：编辑期间完成的同步不会变成草稿基线。
+            val recovery = journalWriteMutex.withLock { store.beginDraft(dateKey) }
+            val committed = store.get(dateKey)
+            content = when (recovery) {
+                JournalDraftRecovery.None -> committed
+                is JournalDraftRecovery.Recovered -> recovery.text
+                is JournalDraftRecovery.Conflict -> recovery.text
+            }
+            journalHasDraft = recovery != JournalDraftRecovery.None
+            noteSessionBase = committed
+            journalEditing = true
+            noteSheetOpen = true
+        }
+    }
+
+    fun closeNoteEditor() {
+        noteSheetOpen = false
+        journalEditing = false
+    }
+
+    /** 对勾：提交当天 Note，并立刻用正文开一次识别预览。 */
+    fun saveNoteAndClose(text: String) {
+        noteUnsavedPrompt = false
+        content = text
+        commitJournalDraft(text)
+        closeNoteEditor()
+        openSchedulePreview(text)
+    }
+
+    /** 丢弃：把本机排队中的那份文档拿掉，回到上一次被接受的正文。 */
+    fun discardNoteDraft() {
+        noteUnsavedPrompt = false
+        journalActions.discardDraft()
+        closeNoteEditor()
+    }
+
+    /** 返回语义由这里统一决定，编辑器与关闭按钮都只是发起请求。 */
+    fun requestNoteExit() {
+        if (content != noteSessionBase) {
+            noteUnsavedPrompt = true
+        } else {
+            closeNoteEditor()
+        }
+    }
 
     suspend fun refreshJournalRecovery(date: String) {
         when (val recovery = store.getDraftRecovery(date)) {
@@ -375,202 +569,57 @@ fun MainScreen(
         }
     }
 
-    val isPhone = LocalConfiguration.current.screenWidthDp < 840
-    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=Notes, 1=Inbox, 2=Timeline
+    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=今天（时间轴 + Note）, 1=Inbox
     var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
     var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
     var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Today.key) }
     val selectedView = TaskView.fromKey(selectedViewKey)
     var showViewSheet by remember { mutableStateOf(false) }
     var taskWidgetModalVisible by remember { mutableStateOf(false) }
-    var timelineModalVisible by remember { mutableStateOf(false) }
     val viewSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // ── Schedule extraction sheet ───────────────────────────────────────
-    var showScheduleSheet by remember { mutableStateOf(false) }
-    var openingScheduleSheet by remember { mutableStateOf(false) }
-    var thinking by remember { mutableStateOf(false) }
-    var sheetTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
-    var sheetAssumptions by remember { mutableStateOf<List<String>>(emptyList()) }
-    var sheetUsedFallback by remember { mutableStateOf(false) }
-    var sheetRequestId by remember { mutableStateOf("") }
-    var untangleInput by remember { mutableStateOf("") }
-    var prefillLocation by remember { mutableStateOf("") }
-    var gpsLat by remember { mutableStateOf(0.0) }
-    var gpsLng by remember { mutableStateOf(0.0) }
-    var phoneLocationState by remember { mutableStateOf(PhoneLocationState.IDLE) }
-    var pendingLocationRequestId by remember { mutableStateOf<String?>(null) }
-    var locationPermissionGeneration by remember { mutableIntStateOf(0) }
-    var locationPermissionInFlight by remember { mutableStateOf(false) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var phoneLocationForeground by remember(lifecycleOwner) {
-        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
-    }
-    var activeLocationHandle by remember { mutableStateOf<LocationCapture.Handle?>(null) }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        locationPermissionInFlight = false
-        if (hasPhoneLocationPermission(context) && pendingLocationRequestId != null) {
-            locationPermissionGeneration++
-        } else {
-            pendingLocationRequestId = null
-            if (phoneLocationState == PhoneLocationState.LOCATING)
-                phoneLocationState = PhoneLocationState.UNAVAILABLE
-        }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> phoneLocationForeground = true
-                Lifecycle.Event.ON_STOP -> {
-                    phoneLocationForeground = false
-                    activeLocationHandle?.let(LocationCapture::cancel)
-                    activeLocationHandle = null
-                }
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    LaunchedEffect(showScheduleSheet, pendingLocationRequestId, locationPermissionGeneration,
-        phoneLocationForeground, thinking, sheetTasks.isNotEmpty()) {
-        val targetRequestId = pendingLocationRequestId ?: return@LaunchedEffect
-        if (!phoneLocationForeground || !showScheduleSheet || thinking || sheetTasks.isNotEmpty()) return@LaunchedEffect
-        if (!hasPhoneLocationPermission(context)) return@LaunchedEffect
-        val fix = LocationCapture.capture(context) ?: run {
-            phoneLocationState = PhoneLocationState.UNAVAILABLE; return@LaunchedEffect
-        }
-        val resolvedLocation = AmapGeocoder.reverseGeocode(fix.lat, fix.lng, amapApiKey)
-        if (showScheduleSheet && !thinking && sheetTasks.isEmpty()) {
-            gpsLat = fix.lat; gpsLng = fix.lng; prefillLocation = resolvedLocation
-            phoneLocationState = if (resolvedLocation.isBlank()) PhoneLocationState.UNAVAILABLE else PhoneLocationState.READY
-        }
-        pendingLocationRequestId = null
-    }
-
-    fun startDirectAiExtraction() {
-        if (planExtractor == null) {
-            Toast.makeText(context, R.string.ai_service_unavailable, Toast.LENGTH_SHORT).show(); return
-        }
-        if (showScheduleSheet || openingScheduleSheet) return
-        openingScheduleSheet = true
-        scope.launch {
-            try {
-                showScheduleSheet = true; thinking = false; sheetTasks = emptyList()
-                val openedRequestId = "direct-${UUID.randomUUID()}"
-                sheetRequestId = openedRequestId
-                untangleInput = ""; prefillLocation = ""; gpsLat = 0.0; gpsLng = 0.0
-                phoneLocationState = PhoneLocationState.LOCATING
-                if (showScheduleSheet && sheetRequestId == openedRequestId && phoneLocationForeground) {
-                    pendingLocationRequestId = openedRequestId
-                    if (!hasPhoneLocationPermission(context)) {
-                        locationPermissionInFlight = true
-                        runCatching {
-                            locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
-                        }.onFailure { locationPermissionInFlight = false; pendingLocationRequestId = null; phoneLocationState = PhoneLocationState.UNAVAILABLE }
-                    }
-                }
-            } finally { openingScheduleSheet = false }
-        }
-    }
 
     // ── Panel building blocks ────────────────────────────────────────────
-    val notesCardContent: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) {
-                    NotesHeader(
-                        date = journalDate,
-                        onPanelToggle = { panelOpen = !panelOpen },
-                    )
-                    HorizontalDivider(color = BORDER, thickness = 1.dp)
-                    MarkdownField(
-                        content = content,
-                        onEditStart = {
-                            val recovery = journalWriteMutex.withLock { store.beginDraft(journalDateKey) }
-                            val sessionText = when (recovery) {
-                                JournalDraftRecovery.None -> store.get(journalDateKey)
-                                is JournalDraftRecovery.Recovered -> recovery.text
-                                is JournalDraftRecovery.Conflict -> recovery.text
-                            }
-                            content = sessionText
-                            journalHasDraft = recovery != JournalDraftRecovery.None
-                            sessionText
-                        },
-                        onSave = { text ->
-                            content = text
-                            commitJournalDraft(text)
-                        },
-                        onDraftChange = { text ->
-                            content = text
-                            saveJournalDraft(text)
-                        },
-                        onEditingChange = { journalEditing = it },
-                        // The app-level pull boundary is the only gesture source. The editor must
-                        // never infer a business sync from its own restored visual state.
-                        onPullRefresh = null,
-                        placeholder = stringResource(R.string.journal_edit_hint),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (panelOpen) {
-                    SyncSettingsPanel(
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
-                        serverUrl = serverUrl,
-                        syncStatus = syncStatus,
-                        syncMsg = syncMsg,
-                        onUrlChange = { serverUrl = it },
-                        onClose = { panelOpen = false },
-                        onOpenLogs = { showSyncLogs = true },
-                        // 「连接」= 保存当前输入并立刻同步。requestSync 会先落盘再联网,
-                        // 所以这是输入框唯一的持久化入口。
-                        onConnect = {
-                            panelOpen = false
-                            requestSync(SyncReason.USER_GESTURE)
-                        },
-                        onReconnect = {
-                            panelOpen = false
-                            scope.launch {
-                                runCatching {
-                                    // 重置会丢弃本机状态,所以必须先保存当前输入,
-                                    // 否则重新拉取时读到的还是空配置。
-                                    manager.saveServerUrl(serverUrl)
-                                                            manager.resetConnection()
-                                }.onFailure { Log.w("TPlannerSync", "Reconnect failed", it) }
-                            }
-                        },
-                    )
-                }
-                if (showSyncLogs) {
-                    SyncLogPanel(
-                        entries = syncLogEntries,
-                        onClear = {
-                            SyncLog.clear()
-                        },
-                        onClose = { showSyncLogs = false },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 8.dp),
-                    )
-                }
-                if (planExtractor != null) {
-                    IconButton(
-                        onClick = { startDirectAiExtraction() },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 12.dp, bottom = 12.dp)
-                            .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
-                            .background(GOLD, CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Filled.AutoAwesome,
-                            contentDescription = stringResource(R.string.ai_schedule_extraction),
-                            tint = ON_ACCENT,
-                            modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
-                        )
+    // 同步设置与同步日志：主界面唯一的浮层，落在右上角悬浮按钮下面。
+    val syncOverlays: @Composable BoxScope.() -> Unit = {
+        if (panelOpen) {
+            SyncSettingsPanel(
+                // 让开右上角悬浮的同步设置按钮。
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 68.dp, end = 8.dp),
+                serverUrl = serverUrl,
+                syncStatus = syncStatus,
+                syncMsg = syncMsg,
+                onUrlChange = { serverUrl = it },
+                onClose = { panelOpen = false },
+                onOpenLogs = { showSyncLogs = true },
+                // 「连接」= 保存当前输入并立刻同步。requestSync 会先落盘再联网,
+                // 所以这是输入框唯一的持久化入口。
+                onConnect = {
+                    panelOpen = false
+                    requestSync(SyncReason.USER_GESTURE)
+                },
+                onReconnect = {
+                    panelOpen = false
+                    scope.launch {
+                        runCatching {
+                            // 重置会丢弃本机状态,所以必须先保存当前输入,
+                            // 否则重新拉取时读到的还是空配置。
+                            manager.saveServerUrl(serverUrl)
+                                                    manager.resetConnection()
+                        }.onFailure { Log.w("TPlannerSync", "Reconnect failed", it) }
                     }
-                }
+                },
+            )
+        }
+        if (showSyncLogs) {
+            SyncLogPanel(
+                entries = syncLogEntries,
+                onClear = {
+                    SyncLog.clear()
+                },
+                onClose = { showSyncLogs = false },
+                // 让开右上角悬浮的同步设置按钮。
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 68.dp, end = 8.dp),
+            )
         }
     }
 
@@ -620,10 +669,12 @@ fun MainScreen(
     val chromeHidden = showScheduleSheet ||
         showViewSheet ||
         taskWidgetModalVisible ||
-        timelineModalVisible ||
         pendingNewItem != null ||
         editingItem != null ||
-        itemConflict != null
+        itemConflict != null ||
+        // 展开的 Note 面板遮住整屏，底栏、下拉同步与时间轴手势都要让位。
+        noteSheetOpen ||
+        noteUnsavedPrompt
 
     LaunchedEffect(chromeHidden) {
         if (chromeHidden) chromeMode = ChromeMode.Minimal
@@ -654,179 +705,70 @@ fun MainScreen(
         )
     }
 
-    val timelineCardContent: @Composable () -> Unit = {
-        TimelineScreen(
-            events = events,
-            onEventClick = ::openItem,
-            onAddEvent = ::beginNewItem,
-            onAddTaskAt = ::beginTaskAt,
-            onEventMove = { event, newStart, newEnd ->
-                val updated = event.copy(
-                    start = newStart,
-                    end = newEnd,
-                    updatedAt = System.currentTimeMillis(),
-                )
-                val nextEvents = events.map { current ->
-                    if (current.id == updated.id) updated else current
-                }
-                events = nextEvents
-                scope.launch {
-                    eventWriteMutex.withLock { eventStore.save(updated, original = event) }
-                }
-            },
-            allowExpandedNavigation =
-                !chromeHidden && chromeMode != ChromeMode.PrimaryNavigation,
-            onNavigationExpandedChange = { expanded ->
-                when {
-                    expanded -> chromeMode = ChromeMode.TimelineNavigation
-                    chromeMode == ChromeMode.TimelineNavigation ->
-                        chromeMode = ChromeMode.Minimal
-                }
-            },
-            onModalVisibilityChange = { timelineModalVisible = it },
-        )
-    }
-
-    // ── Schedule extraction flow ────────────────────────────────────────
-
-    val submitForExtraction: (String) -> Unit = lambda@{ text ->
-        if (thinking || planExtractor == null) return@lambda
-        val requestId = "ui-${UUID.randomUUID()}"
-        sheetRequestId = requestId
-        untangleInput = text
-        val loc = prefillLocation.ifBlank { "" }
-        // 时间基准由客户端给：模型的提示词只允许用这一份锚点，绝不使用自己的训练时间。
-        val now = java.time.Instant.now().atZone(APP_ZONE)
-
-        Log.i(
-            LLM_LOG_TAG,
-            "phase=submit request=$requestId inputChars=${text.length} locationProvided=${loc.isNotBlank()}",
-        )
-        thinking = true
-        sheetTasks = emptyList()
-        sheetAssumptions = emptyList()
-        sheetUsedFallback = false
-        scope.launch {
-            try {
-                // 传输是阻塞的（HttpURLConnection），放到 IO 线程；编排本身不碰界面。
-                val extraction = withContext(Dispatchers.IO) {
-                    planExtractor.extract(
-                        text = text,
-                        now = now,
-                        requestId = requestId,
-                        threadId = requestId,
-                        locationHint = loc,
-                        onTelemetry = { Log.i(LLM_LOG_TAG, "phase=telemetry ${it.logLine()}") },
+    // 合并后的主界面：一天的纵向时间轴 + 底部 mini note。点开 note 才升起编辑面板，
+    // 所以"看今天"和"写今天"不再是两个页面。
+    // 顶部没有日期条，也没有加号：唯一的写入口是底部 mini note。
+    val dayCardContent: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize()) {
+            TimelineScreen(
+                state = timelineState,
+                events = events,
+                onEventClick = ::openItem,
+                onAddTaskAt = ::beginTaskAt,
+                onEventMove = { event, newStart, newEnd ->
+                    val updated = event.copy(
+                        start = newStart,
+                        end = newEnd,
+                        updatedAt = System.currentTimeMillis(),
                     )
-                }
-                if (sheetRequestId != requestId || !showScheduleSheet) return@launch
-
-                val proposal = extraction.proposal
-                if (proposal != null && !proposal.isEmpty) {
-                    Log.i(
-                        LLM_LOG_TAG,
-                        "phase=route request=$requestId result=proposal fallback=${extraction.usedFallback} " +
-                            "topics=${proposal.topics.size} actions=${proposal.actions.size}",
-                    )
-                    sheetTasks = proposal.actions.map { ReviewItem(action = it, selected = it.time.selectedByDefault) }
-                    sheetAssumptions = proposal.assumptions
-                    sheetUsedFallback = extraction.usedFallback
-                    thinking = false
-                    if (extraction.usedFallback) {
-                        // 如实告诉用户这次不是模型给的：本地规则识别能力有限。
-                        Toast.makeText(context, R.string.ai_local_fallback, Toast.LENGTH_LONG).show()
+                    val nextEvents = events.map { current ->
+                        if (current.id == updated.id) updated else current
                     }
-                } else {
-                    Log.w(LLM_LOG_TAG, "phase=route request=$requestId result=empty reason=${extraction.reason}")
-                    thinking = false
-                    val understanding = extraction.proposal?.understanding.orEmpty()
-                    Toast.makeText(
-                        context,
-                        when {
-                            extraction.reason == "empty_input" -> context.getString(R.string.ai_empty_input)
-                            // 模型正常回答、只是没有待办：它能说清原因，就直接告诉用户。
-                            understanding.isNotBlank() ->
-                                context.getString(R.string.ai_no_task, understanding)
-
-                            else -> context.getString(R.string.ai_service_unavailable)
-                        },
-                        Toast.LENGTH_LONG,
-                    ).show()
-                }
-            } catch (error: Exception) {
-                Log.e(LLM_LOG_TAG, "phase=submit request=$requestId result=failed errorType=${error.javaClass.simpleName}", error)
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    thinking = false
-                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    fun confirmTasks(selected: List<ReviewItem>) {
-        val requestId = sheetRequestId.ifBlank { return }
-        if (selected.isEmpty() || thinking) return
-        val now = System.currentTimeMillis()
-        // Every id derives from the persisted requestId, so confirming the same proposal again
-        // rewrites exactly these records through the store's upsert path instead of duplicating them.
-        val items = selected.mapIndexed { index, review ->
-            val action = review.action
-            val time = action.time
-            val start = if (review.clearTime) null else time.start?.let(::parseContractInstant)
-            val end = if (review.clearTime) null else time.end?.let(::parseContractInstant)
-            // A task without a stated start keeps no start: never fabricate one. A deadline-only
-            // action keeps its DUE and is stored as scheduled.
-            val endAt = when {
-                start == null && end == null -> Instant.EPOCH
-                start == null -> end!!
-                else -> end?.takeIf { it.isAfter(start) } ?: start
-            }
-            ScheduleItem(
-                id = stableUntangleId("task:$index", requestId),
-                title = action.title,
-                type = "task",
-                start = start ?: Instant.EPOCH,
-                end = endAt,
-                completed = false,
-                checklist = action.subtasks.mapIndexed { checkIndex, subtask ->
-                    CheckItem(stableUntangleId("task:$index:check:$checkIndex", requestId), subtask.text, false)
+                    events = nextEvents
+                    scope.launch {
+                        eventWriteMutex.withLock { eventStore.save(updated, original = event) }
+                    }
                 },
-                colorId = action.colorId,
-                note = action.note,
-                deletedAt = 0L,
-                updatedAt = now,
-                scheduled = start != null || end != null,
-                lat = gpsLat,
-                lng = gpsLng,
+                notePanel = {
+                    MiniNoteBar(
+                        noteText = content,
+                        placeholder = stringResource(R.string.journal_edit_hint),
+                        onOpen = ::openNoteEditor,
+                        modifier = Modifier.padding(
+                            start = Tokens.Semantic.Spacing.Block.dp,
+                            end = Tokens.Semantic.Spacing.Block.dp,
+                            top = Tokens.Semantic.Spacing.Inline.dp,
+                            // 悬浮导航岛占据屏幕底部，mini note 必须停在它上面。
+                            bottom = Tokens.Component.Note.MiniNoteClearance.dp,
+                        ),
+                    )
+                },
             )
-        }
-        thinking = true
-        scope.launch {
-            try {
-                // One local transaction for the whole accepted proposal.
-                eventWriteMutex.withLock { eventStore.saveAll(items) }
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    showScheduleSheet = false
-                    thinking = false
-                    sheetTasks = emptyList()
-                    sheetRequestId = ""
-                    untangleInput = ""
-                    prefillLocation = ""
-                    gpsLat = 0.0; gpsLng = 0.0
-                    Toast.makeText(
-                        context,
-                        if (items.size == 1) context.getString(R.string.schedule_created_toast, items.first().title)
-                        else context.getString(R.string.untangle_created_multiple_toast, items.size),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            } catch (e: Exception) {
-                Log.e(LLM_LOG_TAG, "request=$requestId phase=confirm result=failed", e)
-                if (showScheduleSheet && sheetRequestId == requestId) {
-                    thinking = false
-                    Toast.makeText(context, R.string.schedule_create_failed_toast, Toast.LENGTH_SHORT).show()
-                }
+            // 同步设置：日期条删除后，它浮在时间轴右上角。
+            IconButton(
+                onClick = { panelOpen = !panelOpen },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        top = Tokens.Semantic.Spacing.Block.dp,
+                        end = Tokens.Semantic.Spacing.Block.dp,
+                    )
+                    .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                    .background(Color(Tokens.Component.Panel.RaisedBackground), CircleShape)
+                    .border(
+                        Tokens.Semantic.Stroke.Control.dp,
+                        BORDER_SUBTLE,
+                        CircleShape,
+                    ),
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = stringResource(R.string.sync_server_title),
+                    tint = DIM,
+                    modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
+                )
             }
+            syncOverlays()
         }
     }
 
@@ -836,21 +778,24 @@ fun MainScreen(
     // 全部静默 —— 否则自己保存引发的版本变化会再弹一次 syncing 动画。
     val isUserGestureSyncing =
         syncOperation.reason == SyncReason.USER_GESTURE && syncOperation.phase.isRunning
-    Box(Modifier.fillMaxSize().background(BG).windowInsetsPadding(WindowInsets.systemBars)) {
+    // 根节点不加系统栏内边距：让位分给各自的使用方（主界面卡片用 systemBars，
+    // Note 面板用 systemBars ∪ ime），否则键盘顶起时会叠加两次，把布局顶乱。
+    Box(Modifier.fillMaxSize().background(BG)) {
         TPlannerPullToSync(
             isSyncing = isUserGestureSyncing,
             operationId = syncOperation.operationId.takeIf {
                 syncOperation.reason == SyncReason.USER_GESTURE
             },
             onSync = onSync,
-            enabled = isPhone && !chromeHidden,
+            enabled = !chromeHidden,
             modifier = Modifier.fillMaxSize(),
         ) {
             if (showScheduleSheet) {
+                // 预览界面：识别结果先在这里过一眼，确认之后才落盘。
                 UntangleSheet(
                     requestId = sheetRequestId,
                     prefillLocation = prefillLocation,
-                    locationLoading = phoneLocationState == PhoneLocationState.LOCATING,
+                    locationLoading = false,
                     initialText = untangleInput,
                     thinking = thinking,
                     tasks = sheetTasks,
@@ -882,10 +827,13 @@ fun MainScreen(
                     },
                     onSubmit = submitForExtraction,
                     onConfirmTasks = ::confirmTasks,
+                    // 系统栏与输入法只在这里让位一次，面板内部不再自己加。
+                    modifier = Modifier.windowInsetsPadding(
+                        WindowInsets.systemBars.union(WindowInsets.ime),
+                    ),
                 )
             } else {
                 MainLayout(
-                    isPhone = isPhone,
                     phoneTab = phoneTab,
                     onPhoneTabSelected = { selected ->
                         phoneTab = selected
@@ -901,22 +849,32 @@ fun MainScreen(
                             chromeMode = ChromeMode.PrimaryNavigation
                         }
                     },
-                    notesCard = notesCardContent,
                     taskCard = taskCardContent,
-                    timelineCard = timelineCardContent,
+                    dayCard = dayCardContent,
                 )
             }
         }
-        if (isPhone) {
-            syncFeedback?.let { feedback ->
-                TPlannerSyncFeedback(
-                    presentation = feedback,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 9.dp),
-                )
-            }
+        syncFeedback?.let { feedback ->
+            TPlannerSyncFeedback(
+                presentation = feedback,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 9.dp),
+            )
         }
+        // Note 面板浮在整个主界面之上（含导航岛），所以它必须是根 Box 的兄弟节点。
+        NoteSheet(
+            visible = noteSheetOpen,
+            value = content,
+            onValueChange = { text ->
+                content = text
+                saveJournalDraft(text)
+            },
+            placeholder = stringResource(R.string.journal_edit_hint),
+            onSave = { text -> saveNoteAndClose(text) },
+            onExitRequest = ::requestNoteExit,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 
     // ── Task view picker ───────────────────────────────────────────────
@@ -1058,6 +1016,16 @@ fun MainScreen(
         )
     }
 
+    // ── Note 未保存返回 ─────────────────────────────────────────────────
+    // 草稿本身是持久的：这里问的不是"要不要落盘"，而是"要不要提交成这一天的正文"。
+    if (noteUnsavedPrompt) {
+        NoteUnsavedDialog(
+            onKeepEditing = { noteUnsavedPrompt = false },
+            onDiscard = ::discardNoteDraft,
+            onSave = { saveNoteAndClose(content) },
+        )
+    }
+
     journalConflict?.let { conflict ->
         AlertDialog(
             onDismissRequest = { journalConflict = null },
@@ -1141,3 +1109,4 @@ private fun stableUntangleId(namespace: String, requestId: String): String =
     UUID.nameUUIDFromBytes(
         "tplanner:untangle:$namespace:$requestId".toByteArray(Charsets.UTF_8)
     ).toString()
+

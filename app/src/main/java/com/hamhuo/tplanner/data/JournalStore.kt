@@ -120,6 +120,16 @@ class JournalStore(
         return true
     }
 
+    /**
+     * 丢弃某天尚未被服务器接受的本地改动，让已安装的记录重新成为唯一事实。
+     *
+     * 草稿不是第二份记录，它就是队列里的同一个文档，所以丢弃是把它从队列里拿掉，
+     * 不需要再写一条"回退"命令，也不会改动服务器上的版本。
+     */
+    fun discardDraft(date: String) {
+        store.discard(journalUid(date))
+    }
+
     suspend fun discardDraft(conflict: DraftConflict): Boolean {
         store.resolveConflict(conflict.target.entityId, reapply = false)
         return true

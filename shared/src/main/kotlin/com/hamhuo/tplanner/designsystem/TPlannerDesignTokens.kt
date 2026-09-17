@@ -162,6 +162,10 @@ object TPlannerGeometry {
 // BEGIN GENERATED LIGHT TOKENS
 object TPlannerLightTokens {
     object Component {
+        object Agenda {
+            const val HourLabelRotation: Float = -90f
+            const val TimeGutterWidth: Float = 24f
+        }
         object Button {
             object Disabled {
                 const val Background: Int = 0xFFDDE1E7.toInt()
@@ -257,6 +261,14 @@ object TPlannerLightTokens {
                 const val TaskTrackingMaxEm: Float = 0.12f
                 const val Time: Float = 9f
             }
+        }
+        object Note {
+            const val MiniNoteClearance: Float = 64f
+            const val MiniNoteHeight: Float = 56f
+            const val MiniNoteRadius: Float = 12f
+            const val SheetBottomBarHeight: Float = 56f
+            const val SheetRadius: Float = 16f
+            const val SheetTopGap: Float = 48f
         }
         object Panel {
             const val Background: Int = 0xFFF6F8FA.toInt()

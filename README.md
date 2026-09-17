@@ -69,7 +69,7 @@ Hop 预览保存在 `design-assets/hop`，表盘资源需随绘制器变更手�
 
 同步 UI 遵守单向数据流：用户手势、冷启动或定时刷新只向进程级 `SyncCoordinator`
 提交请求；`operationId` 标识真实事务，页面只观察
-`saved → uploading → updating → success/error(ERRORxxx)`。切换 Notes / Inbox / Timeline、
+`saved → uploading → updating → success/error(ERRORxxx)`。切换 今天 / Inbox、
 Composable 重组或状态恢复都不得由动画反向触发网络请求。Phone 的 Pull-to-Sync 边界只有
 一个，业务事务进行中切 Tab 只会继续展示同一个 `operationId`。
 
@@ -87,6 +87,28 @@ Renderer 并 `invalidate()`；60 秒重读仅是进程异常恢复兜底。系�
   重复发送仍返回同一份回执，不产生第二组命令。
 - 打开系统日历开关并授予权限后，已排期任务出现在应用自有日历中；完成任务或删除后
   对应日程消失，未排期任务不产生任何日程。
+
+## 手机主界面：一天一屏
+
+界面只有这一套排版：不再把「随手记」和「时间线」分成两个 Tab，也不再按屏宽分叉出
+"宽屏两栏"版本（原 `screenWidthDp < 840` 分支已删除）。折叠屏与外接大屏暂时复用同一排版，
+更通用的自适应方案（分栏、铰链、后置屏）以后单独设计，`MainLayout` 里不预留分叉。
+
+- 状态栏不占位（`MainActivity.applyImmersiveMode`）：内容从屏幕顶端开始，边缘下滑仍可临时唤出。
+- 时间轴**只画今天**：没有顶部日期条（`TimelineDayHeader` 已删除），也没有右下角的加号；
+  长按空白处仍然能在指定时刻落一个任务，新建入口只剩时间轴与 Inbox。
+- 时间刻度写在左侧窄槽里、数字旋转 90° 自下而上读，横向只占一行字高，宽度来自
+  `component.agenda.timeGutterWidth`。
+- 底部 mini note 是唯一的写入口。点开后升起的面板**完全不透明**：顶部的缝留给 "Note"
+  字样与关闭入口，面板本身只有上面两个圆角，背后不会透出时间轴。
+- 保存（对勾）就是全部：提交这一天的 Note，并立刻用正文开一次识别预览。note 面板里没有
+  "提取"按钮（识别一定会跑），但**预览界面保留**——识别结果先在预览里过一眼，勾选/去掉时间/
+  确认之后才写入日程；不确认就什么都不会落盘。
+- 未保存时按返回（或点关闭）：先收起输入法，再弹出确认弹窗；右下角是对勾保存与「丢弃」，
+  「继续编辑」在左下角。丢弃只是把本机排队中的那份文档拿掉，不写回退命令、不动服务器版本。
+
+这些尺寸与圆角全部来自 `design-assets/tokens/tplanner-light.tokens.json` 的
+`component.agenda` / `component.note`，颜色仍取 `semantic.color.*`。
 
 Android 业务 UI 的品牌色、重复语义字号和圆角只能来自 `shared/designsystem`；表盘可以拥有
 独立艺术调色，但色值必须集中在 `TPlannerWatchFacePalette`，不得散落进 Renderer。padding、

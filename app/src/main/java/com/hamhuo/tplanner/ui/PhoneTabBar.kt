@@ -57,8 +57,8 @@ enum class PhoneTabBarPresentation {
 /**
  * Temporary primary navigation for phones.
  *
- * Destination labels intentionally live here, so the second destination remains
- * "Inbox" instead of changing with its currently selected task filter.
+ * 时间轴与 Note 合并成第一格「今天」之后只剩两个去处；目的地名称仍然固定在这里，
+ * 第二格永远是「Inbox」，不随当前任务筛选变化。
  */
 @Composable
 fun PhoneTabBar(
@@ -69,9 +69,8 @@ fun PhoneTabBar(
     onExpandRequest: () -> Unit = {},
 ) {
     val labels = listOf(
-        stringResource(R.string.tab_journal),
+        stringResource(R.string.timeline_today),
         stringResource(R.string.list_inbox),
-        stringResource(R.string.tab_timeline),
     )
 
     if (presentation == PhoneTabBarPresentation.Hidden) return

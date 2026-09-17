@@ -2481,6 +2481,20 @@
     }
   },
   "component": {
+    "agenda": {
+      "$description": "合并后的当日界面：同一天的时间轴与 Note 面板共用一屏。时间刻度纵向排布（数字旋转 90°），把横向空间让给事项卡片；hourLabelRotation 为旋转角度，负值表示自下而上阅读。",
+      "timeGutterWidth": {
+        "$type": "dimension",
+        "$value": {
+          "value": 24,
+          "unit": "px"
+        }
+      },
+      "hourLabelRotation": {
+        "$type": "number",
+        "$value": -90
+      }
+    },
     "button": {
       "primary": {
         "background": {
@@ -2947,6 +2961,45 @@
         "alpha3": {
           "$type": "number",
           "$value": 0.4392156862745098
+        }
+      }
+    },
+    "note": {
+      "$description": "当天 Note 的三个状态：底部 mini 条、上浮的圆角编辑面板（顶部留出放 Note 字样的缝）、未保存确认弹窗复用 dialog。miniNoteClearance 是 mini 条与悬浮导航岛之间必须留出的高度。",
+      "miniNoteHeight": {
+        "$type": "dimension",
+        "$value": {
+          "value": 56,
+          "unit": "px"
+        }
+      },
+      "miniNoteRadius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.card}"
+      },
+      "miniNoteClearance": {
+        "$type": "dimension",
+        "$value": {
+          "value": 64,
+          "unit": "px"
+        }
+      },
+      "sheetRadius": {
+        "$type": "dimension",
+        "$value": "{semantic.radius.dialog}"
+      },
+      "sheetTopGap": {
+        "$type": "dimension",
+        "$value": {
+          "value": 48,
+          "unit": "px"
+        }
+      },
+      "sheetBottomBarHeight": {
+        "$type": "dimension",
+        "$value": {
+          "value": 56,
+          "unit": "px"
         }
       }
     }

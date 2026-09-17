@@ -12,6 +12,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -45,15 +48,31 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(canvas, canvas),
         )
         SyncLog.init(this)
+        applyImmersiveMode()
         advancePermissionSetup()
         lifecycleScope.launch { initializeContent() }
     }
 
     override fun onResume() {
         super.onResume()
+        // 回到前台时系统会把状态栏放回来，这里重新收起。
+        applyImmersiveMode()
         advancePermissionSetup()
         // Local state is already durable; this only converges it with the server.
         V5Sync.request(this)
+    }
+
+    /**
+     * 主界面全天沉浸：状态栏不占位，内容从屏幕顶端开始；用户从边缘下滑仍可临时唤出。
+     *
+     * 导航栏保留——底部导航岛与手势条需要它自己的安全区。
+     */
+    private fun applyImmersiveMode() {
+        WindowCompat.getInsetsController(window, window.decorView)?.apply {
+            hide(WindowInsetsCompat.Type.statusBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
     }
 
     private suspend fun initializeContent() {

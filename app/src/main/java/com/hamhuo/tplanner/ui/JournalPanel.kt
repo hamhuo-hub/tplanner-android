@@ -39,7 +39,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -74,35 +73,9 @@ import androidx.compose.ui.zIndex
 import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
 import com.hamhuo.tplanner.PhoneTypography as TPlannerTypography
 import kotlinx.coroutines.launch
-import java.time.format.DateTimeFormatter
-import java.time.LocalDate
 import kotlin.math.abs
 
 private const val MARKDOWN_VIEWER_URL = "file:///android_asset/md_viewer.html"
-
-@Composable
-fun NotesHeader(date: LocalDate, onPanelToggle: () -> Unit) {
-    val datePattern = stringResource(R.string.date_pattern_full)
-    val today = date.format(DateTimeFormatter.ofPattern(datePattern))
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(stringResource(R.string.tab_journal), color = ACCENT_TEXT, fontSize = TPlannerTypography.PhoneTitleSp.sp, fontWeight = FontWeight.SemiBold)
-            Text(today, color = DIM, fontSize = TPlannerTypography.PhoneSupportingSp.sp)
-        }
-        IconButton(onClick = onPanelToggle) {
-            Icon(
-                Icons.Default.Settings,
-                contentDescription = stringResource(R.string.sync_server_title),
-                tint = DIM,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
 
 @Composable
 fun SyncSettingsPanel(
@@ -330,6 +303,11 @@ fun MarkdownEditor(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(start = 26.dp, end = 26.dp, top = 22.dp, bottom = 32.dp),
     showToolbar: Boolean = false,
+    // 非空时返回键交给调用方：合并后的 Note 面板要先判断「有没有未保存的改动」，
+    // 不能在这里默默保存并关闭。
+    onExitRequest: (() -> Unit)? = null,
+    // false 时先不抢焦点：面板还在滑入动画里，输入法此刻弹起会把布局顶乱。
+    autoFocus: Boolean = true,
 ) {
     var finishRequested by remember { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
@@ -346,10 +324,10 @@ fun MarkdownEditor(
     }
 
     BackHandler {
-        if (imeVisible) {
-            keyboardController?.hide()
-        } else {
-            finishEditing()
+        when {
+            imeVisible -> keyboardController?.hide()
+            onExitRequest != null -> onExitRequest()
+            else -> finishEditing()
         }
     }
 
@@ -415,7 +393,7 @@ fun MarkdownEditor(
                 inner()
             }
         )
-        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        LaunchedEffect(autoFocus) { if (autoFocus) focusRequester.requestFocus() }
     }
 }
 

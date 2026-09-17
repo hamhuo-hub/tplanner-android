@@ -1,50 +1,44 @@
 package com.hamhuo.tplanner.timeline
 
-import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import com.hamhuo.tplanner.APP_ZONE
 import com.hamhuo.tplanner.ScheduleItem
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
-import com.hamhuo.tplanner.timeline.components.TimelineAddButton
 import com.hamhuo.tplanner.timeline.components.TimelineBody
-import com.hamhuo.tplanner.timeline.components.TimelineDayHeader
 import com.hamhuo.tplanner.timeline.components.TimelineStatusStrip
 import java.time.Instant
-import java.time.LocalDate
 
 /**
  * A deterministic, non-AI schedule view. Conflicts are intentionally allowed:
  * they are narrowed and stacked instead of blocking a save or opening a dialog.
+ *
+ * 只画**一天**：默认就是今天，顶部没有日期条——翻日期不再属于主界面。
+ * 新建也不在这里（右下角的加号已删除）：长按空白处仍然能在指定时刻落一个任务。
+ *
+ * [state] 由调用方持有，因为同屏的 Note 必须知道当前展示的是哪一天。
  */
 @Composable
-fun TimelineScreen(
+internal fun TimelineScreen(
+    state: TimelineState,
     events: List<ScheduleItem>,
     onEventClick: (ScheduleItem) -> Unit,
-    onAddEvent: (String) -> Unit,
     onAddTaskAt: (Instant) -> Unit,
     onEventMove: (ScheduleItem, Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
-    allowExpandedNavigation: Boolean = true,
-    onNavigationExpandedChange: (Boolean) -> Unit = {},
-    onModalVisibilityChange: (Boolean) -> Unit = {},
+    // 合并后的当日界面把 mini note 放在时间轴下方；时间轴本身不解释它的语义。
+    notePanel: (@Composable () -> Unit)? = null,
 ) {
     val zone = APP_ZONE
-    val context = LocalContext.current
     val now = rememberTimelineNow(zone)
     val today = now.toLocalDate()
-    val state = rememberTimelineState(zone, today)
     val selectedDay = state.firstDay
     val days = remember(state.firstDayEpoch) {
         List(TimelineGeometry.visibleDayCount) { index ->
@@ -68,38 +62,12 @@ fun TimelineScreen(
         hourHeightPx = hourHeightPx,
     )
 
-    fun openDatePicker() {
-        val initialDate = selectedDay
-        val dialog = DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth ->
-                state.goToDate(LocalDate.of(year, month + 1, dayOfMonth))
-            },
-            initialDate.year,
-            initialDate.monthValue - 1,
-            initialDate.dayOfMonth,
-        )
-        dialog.setOnDismissListener { onModalVisibilityChange(false) }
-        onModalVisibilityChange(true)
-        dialog.show()
-    }
-
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(TPlannerLightTokens.Semantic.Color.Canvas)),
     ) {
         Column(Modifier.fillMaxSize()) {
-            TimelineDayHeader(
-                selectedDay = selectedDay,
-                today = today,
-                onDaySelected = state::goToDate,
-                onCalendarClick = {
-                    if (selectedDay == today) openDatePicker() else state.goToToday(today)
-                },
-                allowExpandedControls = allowExpandedNavigation,
-                onExpandedControlsChange = onNavigationExpandedChange,
-            )
             TimelineStatusStrip(
                 day = selectedDay,
                 events = visibleEvents,
@@ -121,13 +89,9 @@ fun TimelineScreen(
                 onEventMove = onEventMove,
                 modifier = Modifier.weight(1f),
             )
+            if (notePanel != null) {
+                notePanel()
+            }
         }
-
-        TimelineAddButton(
-            onClick = { onAddEvent("event") },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = 52.dp),
-        )
     }
 }

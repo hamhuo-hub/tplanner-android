@@ -2,20 +2,25 @@ package com.hamhuo.tplanner.timeline.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens
@@ -71,17 +76,40 @@ internal fun TimelineGrid(
 
     }
 
+    VerticalHourLabels(
+        gutterWidth = TimelineGeometry.timeGutterWidth,
+        hourHeight = TimelineGeometry.hourHeight,
+    )
+}
+
+/**
+ * 24 个小时刻度，数字整体旋转 90°（自下而上读），横向只占一行字高。
+ *
+ * 标签先按自然宽度测量再整体旋转：父级只给刻度宽度，若先按父级约束换行或省略，
+ * "07:00" 会在旋转前就被截断。
+ */
+@Composable
+private fun VerticalHourLabels(gutterWidth: Dp, hourHeight: Dp) {
     for (hour in 0 until 24) {
-        Text(
-            text = String.format(Locale.US, "%02d:00", hour),
-            color = Color(TPlannerLightTokens.Semantic.Color.TextSecondary),
-            fontFamily = FontFamily.Monospace,
-            fontSize = TPlannerTypography.TimelineTimeSp.sp,
+        Box(
             modifier = Modifier
-                .offset(y = TimelineGeometry.hourHeight * hour + 3.dp)
-                .width(TimelineGeometry.timeGutterWidth)
-                .padding(start = 5.dp),
-        )
+                .offset(y = hourHeight * hour)
+                .width(gutterWidth)
+                .height(hourHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = String.format(Locale.US, "%02d:00", hour),
+                color = Color(TPlannerLightTokens.Semantic.Color.TextSecondary),
+                fontFamily = FontFamily.Monospace,
+                fontSize = TPlannerTypography.TimelineTimeSp.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .wrapContentWidth(unbounded = true)
+                    .rotate(TPlannerLightTokens.Component.Agenda.HourLabelRotation),
+            )
+        }
     }
 }
 
