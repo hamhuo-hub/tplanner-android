@@ -37,8 +37,8 @@
     <string name="plan_open">展开计划</string>
     <string name="plan_discard">丢弃</string>
     <string name="plan_keep_editing">继续编辑</string>
-    <string name="plan_unsaved_title">计划还没有保存</string>
-    <string name="plan_unsaved_message">修改只保存在本机。右下角对勾保存这一天的内容；丢弃则回到上一次保存的版本。</string>
+    <string name="plan_unsaved_title">这段文字还没交出去</string>
+    <string name="plan_unsaved_message">离开后它就没了——这里不保存正文。右下角对勾可以先交给 TPlanner 整理，丢弃则直接清空。</string>
     <string name="list_inbox">收件箱</string>
     <string name="list_today">今天</string>
     <string name="task_view_picker_title">筛选</string>

@@ -203,7 +203,9 @@ internal fun JcalDocument.expandForDisplay(windowStart: Instant, windowEnd: Inst
 internal fun List<JcalDocument>.toDisplayItems(
     windowStart: Instant = Instant.now().minusSeconds(RECURRENCE_WINDOW_DAYS * 86_400),
     windowEnd: Instant = Instant.now().plusSeconds(RECURRENCE_WINDOW_DAYS * 86_400),
-): List<ScheduleItem> = flatMap { document ->
+): List<ScheduleItem> = filter { it.kind == "vtodo" }.flatMap { document ->
+    // 只有 VTODO 是任务。VJOURNAL 是别处写下的日记：它不是待办，也绝不能以"未命名"
+    // 的样子出现在时间轴或收件箱里。
     if (document.start == null) listOf(document.toMasterItem()) else document.expandForDisplay(windowStart, windowEnd)
 }
 

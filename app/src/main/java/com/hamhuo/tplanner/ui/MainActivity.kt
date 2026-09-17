@@ -76,7 +76,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun initializeContent() {
-        val journalStore = JournalStore(this)
         val eventStore = ScheduleItemStore(this)
         val manager = SyncManager(this)
         val deepseekKey = BuildConfig.DEEPSEEK_API_KEY
@@ -101,15 +100,6 @@ class MainActivity : ComponentActivity() {
                 "locationApiConfigured=${amapKey.isNotBlank()} syncProtocol=v5",
         )
 
-        val initialJournalSession = journalStore.latestDraftRecovery()
-        val initialJournalDate = initialJournalSession?.date ?: appToday().toString()
-        val initialJournalRecovery = initialJournalSession?.recovery
-            ?: journalStore.getDraftRecovery(initialJournalDate)
-        val initialContent = when (initialJournalRecovery) {
-            JournalDraftRecovery.None -> journalStore.get(initialJournalDate)
-            is JournalDraftRecovery.Recovered -> initialJournalRecovery.text
-            is JournalDraftRecovery.Conflict -> initialJournalRecovery.text
-        }
         val initialEventRecovery = eventStore.latestEventDraftRecovery()
         val initialEvents = eventStore.getAll()
         val initialServerUrl = manager.getServerUrl()
@@ -117,15 +107,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             TPlannerPhoneTheme {
                 MainScreen(
-                    store = journalStore,
                     eventStore = eventStore,
                     manager = manager,
                     planExtractor = planExtractor,
                     amapApiKey = amapKey,
-                    initialContent = initialContent,
                     initialEvents = initialEvents,
-                    initialJournalDate = initialJournalDate,
-                    initialJournalRecovery = initialJournalRecovery,
                     initialServerUrl = initialServerUrl,
                     initialEventRecovery = initialEventRecovery,
                 )

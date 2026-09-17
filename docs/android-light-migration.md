@@ -70,6 +70,11 @@
   一并消失）。主界面只剩 Timeline + 底部 Plan 输入条 + 右上角控制器（`ui/DayControlDock.kt`）：
   一个 `Transition(expanded)` 让同一枚控制点长成控制组，内含 Inbox/今天、连体 `‹ ›` 日期
   胶囊、设置。`MainLayout` 因此只剩 `showInbox` 一个开关。
+- Plan 正文改为**不落盘**：删掉 `JournalStore` / `JournalActions` / `JournalDayRollover`
+  与草稿、恢复、冲突弹窗、跨零点提交那一整套；正文只是 `MainScreen` 里的会话状态，
+  退出即销毁。只有预览里点过「确认添加」的日程会写入。`JcalProjection.toDisplayItems()`
+  同时收紧为只投影 VTODO——此前 VJOURNAL 也被当成任务，于是刚写下的日记会以"未命名"
+  的形式出现在时间轴与收件箱里（这正是"每次点 plan 就多一个未命名任务"的来源）。
 - 控制器收敛成"一列独立圆形按钮"：44dp 圆 + 20dp 图标是右上角唯一的形状语言，父布局完全
   透明、每枚圆自带 `component.dock.surfaceOpacity` 这一层 material，没有父底板、没有 border
   （避免圆角处的白色 halo）。收起与展开是两套内容、同一时刻只存在一套——此前两者同时绘制，

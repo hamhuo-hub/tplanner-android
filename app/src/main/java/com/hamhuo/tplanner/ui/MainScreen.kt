@@ -26,7 +26,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,12 +53,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
-private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
+private const val DAY_POLL_MILLIS = 30_000L
 
 /** 换日提示停留多久：足够看清，又不占着屏幕。 */
 private const val DAY_FLASH_MILLIS = 1_000L
@@ -77,136 +75,47 @@ private fun Throwable.locationForLog(): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    store: JournalStore,
     eventStore: ScheduleItemStore,
     manager: SyncManager,
     planExtractor: PlanExtractor?,
     amapApiKey: String,
-    initialContent: String,
     initialEvents: List<ScheduleItem>,
-    initialJournalDate: String,
-    initialJournalRecovery: JournalDraftRecovery,
     initialServerUrl: String,
     initialEventRecovery: EventDraftRecovery?,
 ) {
     val scope  = rememberCoroutineScope()
     val context = LocalContext.current
-    var content    by remember { mutableStateOf(initialContent) }
     var panelOpen  by remember { mutableStateOf(false) }
     var events     by remember { mutableStateOf(initialEvents) }
-    var journalHasDraft by remember {
-        mutableStateOf(initialJournalRecovery !is JournalDraftRecovery.None)
-    }
-    var journalConflict by remember {
-        mutableStateOf(
-            (initialJournalRecovery as? JournalDraftRecovery.Conflict)
-                ?.let { JournalConflictPrompt(it.details) }
-        )
-    }
-    val journalWriteMutex = remember { Mutex() }
     val eventWriteMutex = remember { Mutex() }
-    // 编辑或恢复草稿期间不推进日期。运行中的 Activity 跨过零点时，只要界面本来就停在
-    // 「今天」，就先提交前一天再前进；用户主动翻到别的日期时保持原样。
-    var journalEditing by remember { mutableStateOf(false) }
-    // 主界面同屏只展示一天：时间轴停在哪天，Plan 就写哪天的内容。
-    val initialTimelineDay = remember(initialJournalDate) {
-        runCatching { LocalDate.parse(initialJournalDate) }.getOrDefault(appToday())
-    }
-    val timelineState = rememberTimelineState(APP_ZONE, initialTimelineDay)
-    val journalDate = timelineState.firstDay
-    val journalDateKey = journalDate.toString()
-    val currentJournalDateKey by rememberUpdatedState(journalDateKey)
 
-    // 跨零点只在界面本来就停在「今天」时前进；用户主动翻到别的日期时不会被拉回来。
-    // 编辑中或还有未提交草稿时先提交前一天，绝不静默丢弃。
+    // 底部那张纸的正文：**只活在这一次会话里**。它不是记录，退出即销毁；
+    // 真正落盘的只有用户在预览里明确确认过的日程。
+    var planText by remember { mutableStateOf("") }
+
+    // 主界面同屏只展示一天。
+    val timelineState = rememberTimelineState(APP_ZONE, appToday())
+    val displayedDay = timelineState.firstDay
+
+    // 跨零点：界面本来就停在「今天」时跟着前进。没有草稿要提交，纯展示。
     var anchoredToday by remember { mutableStateOf(appToday()) }
-    LaunchedEffect(journalEditing, journalDate) {
-        while (!journalEditing) {
-            val rollover = planJournalDayRollover(
-                displayedDate = anchoredToday,
-                today = appToday(),
-                isEditing = journalEditing,
-                hasDraft = journalHasDraft,
-                content = content,
-            )
-            if (rollover != null) {
-                var rolloverConflict: JournalConflictPrompt? = null
-                val canAdvance = rollover.draftContent?.let { draft ->
-                    val result = try {
-                        journalWriteMutex.withLock {
-                            store.commitDraft(rollover.previousDate.toString(), draft)
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        Log.w(
-                            "TPlannerJournal",
-                            "Unable to commit the previous day's note before rollover",
-                            error,
-                        )
-                        null
-                    }
-                    when (result) {
-                        null -> false
-                        DraftCommitResult.Saved,
-                        DraftCommitResult.AlreadySaved,
-                        -> true
-                        is DraftCommitResult.Conflict -> {
-                            rolloverConflict = JournalConflictPrompt(result.details)
-                            true
-                        }
-                    }
-                } ?: true
-
-                if (canAdvance) {
-                    anchoredToday = rollover.nextDate
-                    if (journalDate == rollover.previousDate) {
-                        val nextContent = store.get(rollover.nextDate.toString())
-                        timelineState.goToDate(rollover.nextDate)
-                        content = nextContent
-                        journalHasDraft = false
-                        journalConflict = rolloverConflict
-                            ?: journalConflict?.takeUnless {
-                                it.date == rollover.previousDate.toString()
-                            }
-                    }
-                }
+    LaunchedEffect(displayedDay) {
+        while (true) {
+            val today = appToday()
+            if (today != anchoredToday) {
+                val previous = anchoredToday
+                anchoredToday = today
+                if (displayedDay == previous) timelineState.goToDate(today)
             }
-            delay(JOURNAL_DAY_POLL_MILLIS)
+            delay(DAY_POLL_MILLIS)
         }
     }
-    val journalActions = remember {
-        JournalActions(
-            scope, context, store, journalWriteMutex,
-            { currentJournalDateKey }, { content }, { content = it },
-            { journalHasDraft }, { journalHasDraft = it },
-            { journalConflict }, { journalConflict = it },
-        )
-    }
-
-    LaunchedEffect(eventStore) {
-        eventStore.observeAll().collect { storedEvents ->
-            events = storedEvents
-        }
-    }
-    LaunchedEffect(store, journalDateKey) {
-        store.observe(journalDateKey).collect { entry ->
-            if (!journalHasDraft) {
-                content = entry?.takeIf { it.deletedAt == 0L }?.text.orEmpty()
-            }
-        }
-    }
-
-    fun saveJournalDraft(text: String) = journalActions.saveDraft(text)
-    fun commitJournalDraft(text: String) = journalActions.commitDraft(text)
 
     // ── 底部那张纸：写 → 交给 TPlanner → 检查理解 → 落入时间 ──────────────
     // 状态机只有这几步（PlanStage）：Collapsed → Editing → Submitting → Preview → Committing
     // → Collapsed。同一个枚举决定纸长什么样，界面不自己猜。
     var planStage by remember { mutableStateOf(PlanStage.Collapsed) }
     var planUnsavedPrompt by remember { mutableStateOf(false) }
-    // 摊开纸时那一份已提交的正文：返回时用它判断"有没有未保存的改动"。
-    var planSessionBase by remember { mutableStateOf("") }
     // 预览数据：模型给出的动作 + 识别这一次的 requestId（回执对不上就丢弃）。
     var planTasks by remember { mutableStateOf<List<ReviewItem>>(emptyList()) }
     var planRequestId by remember { mutableStateOf("") }
@@ -219,30 +128,15 @@ fun MainScreen(
         revealedEventIds = emptySet()
     }
 
-    /** 把纸收回去（预览确认、丢弃、无改动返回都走这里）。 */
+    /** 把纸收回去（预览确认、丢弃、无内容返回都走这里）。 */
     fun collapsePlan() {
         planStage = PlanStage.Collapsed
-        journalEditing = false
     }
 
-    /** 摊开纸：捕获权威版本，然后进入可写状态。 */
+    /** 摊开纸：直接进入可写状态。没有草稿、没有恢复——正文只活在这次会话里。 */
     fun openPlanEditor() {
         if (planStage != PlanStage.Collapsed) return
-        val dateKey = journalDateKey
-        scope.launch {
-            // 在编辑器接受输入之前捕获权威版本：编辑期间完成的同步不会变成草稿基线。
-            val recovery = journalWriteMutex.withLock { store.beginDraft(dateKey) }
-            val committed = store.get(dateKey)
-            content = when (recovery) {
-                JournalDraftRecovery.None -> committed
-                is JournalDraftRecovery.Recovered -> recovery.text
-                is JournalDraftRecovery.Conflict -> recovery.text
-            }
-            journalHasDraft = recovery != JournalDraftRecovery.None
-            planSessionBase = committed
-            journalEditing = true
-            planStage = PlanStage.Editing
-        }
+        planStage = PlanStage.Editing
     }
 
     /**
@@ -317,14 +211,13 @@ fun MainScreen(
     /**
      * 对勾：把这段自然语言交给 TPlanner 整理。
      *
-     * 此刻还没有创建任何日程——所以这里不叫 save：原文先落盘（用户写的东西不丢），
+     * 此刻还没有创建任何日程，正文也不落盘——所以这里既不叫 save 也不写库：
      * 纸进入 Submitting，模型回答之前没有第二条路径。
      */
     fun submitPlanForPreview(text: String) {
         if (planStage != PlanStage.Editing) return
         planUnsavedPrompt = false
-        content = text
-        commitJournalDraft(text)
+        planText = text
         val requestId = "plan-${UUID.randomUUID()}"
         planRequestId = requestId
         planStage = PlanStage.Submitting
@@ -382,6 +275,8 @@ fun MainScreen(
                 eventWriteMutex.withLock { eventStore.saveAll(items) }
                 revealedEventIds = items.mapTo(mutableSetOf()) { it.id }
                 collapsePlan()
+                // 这句话已经交付了：底部回到"想做什么？"。
+                planText = ""
                 planTasks = emptyList()
                 planRequestId = ""
                 Toast.makeText(
@@ -398,10 +293,10 @@ fun MainScreen(
         }
     }
 
-    /** 丢弃：把本机排队中的那份文档拿掉，回到上一次被接受的正文。 */
-    fun discardPlanDraft() {
+    /** 丢弃：这段文字不要了。它本来就只活在这次会话里，没有任何副本要清理。 */
+    fun discardPlanText() {
         planUnsavedPrompt = false
-        journalActions.discardDraft()
+        planText = ""
         collapsePlan()
     }
 
@@ -417,7 +312,7 @@ fun MainScreen(
         when (planStage) {
             PlanStage.Collapsed -> Unit
             PlanStage.Editing ->
-                if (content != planSessionBase) planUnsavedPrompt = true else collapsePlan()
+                if (planText.isNotBlank()) planUnsavedPrompt = true else collapsePlan()
 
             PlanStage.Submitting -> {
                 // 让在途结果作废，再回到编辑。
@@ -427,32 +322,6 @@ fun MainScreen(
 
             PlanStage.Preview -> planStage = PlanStage.Editing
             PlanStage.Committing -> Unit
-        }
-    }
-
-    suspend fun refreshJournalRecovery(date: String) {
-        when (val recovery = store.getDraftRecovery(date)) {
-            JournalDraftRecovery.None -> {
-                if (journalConflict?.date == date) journalConflict = null
-                if (date == journalDateKey) {
-                    journalHasDraft = false
-                    content = store.get(date)
-                }
-            }
-            is JournalDraftRecovery.Recovered -> {
-                if (journalConflict?.date == date) journalConflict = null
-                if (date == journalDateKey) {
-                    journalHasDraft = true
-                    content = recovery.text
-                }
-            }
-            is JournalDraftRecovery.Conflict -> {
-                journalConflict = JournalConflictPrompt(recovery.details)
-                if (date == journalDateKey) {
-                    journalHasDraft = true
-                    content = recovery.text
-                }
-            }
         }
     }
 
@@ -523,7 +392,6 @@ fun MainScreen(
             syncOperation.reason == SyncReason.USER_GESTURE
         if (!terminal || presentedSyncOperationId == operationId) return@LaunchedEffect
         presentedSyncOperationId = operationId
-        runCatching { refreshJournalRecovery(journalDateKey) }
         syncFeedbackGeneration++
         syncFeedback = TPlannerSyncFeedbackPresentation(
             generation = syncFeedbackGeneration,
@@ -675,10 +543,10 @@ fun MainScreen(
     // 换日之后短暂报一下"你在哪一天"：主界面没有 header，方向感靠这一下。
     var dayFlashVisible by remember { mutableStateOf(false) }
     var dayFlashGeneration by remember { mutableIntStateOf(0) }
-    var lastSeenDay by remember { mutableStateOf(journalDateKey) }
-    LaunchedEffect(journalDateKey) {
-        if (journalDateKey != lastSeenDay) {
-            lastSeenDay = journalDateKey
+    var lastSeenDay by remember { mutableStateOf(displayedDay) }
+    LaunchedEffect(displayedDay) {
+        if (displayedDay != lastSeenDay) {
+            lastSeenDay = displayedDay
             dayFlashGeneration++
         }
     }
@@ -734,7 +602,7 @@ fun MainScreen(
                 },
                 planPanel = {
                     MiniPlanBar(
-                        planText = content,
+                        planText = planText,
                         placeholder = stringResource(R.string.plan_edit_hint),
                         onOpen = ::openPlanEditor,
                         modifier = Modifier.padding(
@@ -799,10 +667,10 @@ fun MainScreen(
             },
             modifier = Modifier.fillMaxSize(),
             // 不在今天时，控制点自己带一个极小的日期。
-            dayBadge = journalDate.takeIf { it != appToday() }?.dayOfMonth?.toString(),
+            dayBadge = displayedDay.takeIf { it != appToday() }?.dayOfMonth?.toString(),
         )
         DayFlashLabel(
-            text = journalDate.format(dayFlashFormatter),
+            text = displayedDay.format(dayFlashFormatter),
             visible = dayFlashVisible,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -820,11 +688,8 @@ fun MainScreen(
         // 写、整理中、预览、提交中都是这一张纸的连续状态。
         PlanSheet(
             stage = planStage,
-            value = content,
-            onValueChange = { text ->
-                content = text
-                saveJournalDraft(text)
-            },
+            value = planText,
+            onValueChange = { text -> planText = it },
             placeholder = stringResource(R.string.plan_edit_hint),
             onSubmit = { text -> submitPlanForPreview(text) },
             onExitRequest = ::requestPlanExit,
@@ -999,34 +864,8 @@ fun MainScreen(
     if (planUnsavedPrompt) {
         PlanUnsavedDialog(
             onKeepEditing = { planUnsavedPrompt = false },
-            onDiscard = ::discardPlanDraft,
-            onSubmit = { submitPlanForPreview(content) },
-        )
-    }
-
-    journalConflict?.let { conflict ->
-        AlertDialog(
-            onDismissRequest = { journalConflict = null },
-            title = { Text("日记内容冲突") },
-            text = { Text("其他设备已修改当天内容。草稿不会丢失；请选择保留草稿、使用当前版本，或明确覆盖当前版本。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    journalActions.resolveOverwrite(conflict.details)
-                    if (journalConflict != null) {
-                        scope.launch { refreshJournalRecovery(conflict.date) }
-                    }
-                }) { Text("覆盖当前") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { journalConflict = null }) {
-                        Text("保留草稿")
-                    }
-                    TextButton(onClick = {
-                        journalActions.resolveDiscard(conflict.details)
-                    }) { Text("使用当前版本") }
-                }
-            },
+            onDiscard = ::discardPlanText,
+            onSubmit = { submitPlanForPreview(planText) },
         )
     }
 
