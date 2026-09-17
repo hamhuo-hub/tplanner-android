@@ -7,9 +7,11 @@
 # never pushed produces `X.Y.Z-dev+tag-not-pushed` — use -Push, or push afterwards.
 #
 # Usage:
-#   .\scripts\release.ps1 6.0.2          # create tag mobile_6.0.2 locally
+#   .\scripts\release.ps1 6.0.2          # create tag mobile-mobile_6.0.2 locally
 #   .\scripts\release.ps1 6.0.2 -Push    # create tag and push to origin
 #
+# Tags in this repository carry a `mobile-` namespace (added when the repository was split
+# out of the monorepo), so the tag for x.y.z is `mobile-mobile_x.y.z`.
 # After tagging and pushing, check the version that will be built: .\gradlew.bat printVersion
 param(
     [Parameter(Mandatory = $true)]
@@ -23,7 +25,7 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version must be x.y.z (e.g. 6.0.2), got: $Version"
 }
 $newParts = [int[]]($Version -split '\.')
-$tag = "mobile_$Version"
+$tag = "mobile-mobile_$Version"
 
 # Zero-pad each semver part to 4 digits so that 6.0.10 > 6.0.2 compares correctly.
 function Pad([int[]]$parts) {
@@ -32,8 +34,8 @@ function Pad([int[]]$parts) {
 
 function Get-AndroidTags([string[]]$names) {
     $names |
-        Where-Object { $_ -match '^(mobile_|PUKEKO_)\d+\.\d+\.\d+$' } |
-        Sort-Object -Descending { Pad ([int[]](($_ -replace '^(mobile_|PUKEKO_)', '') -split '\.')) }
+        Where-Object { $_ -match '^mobile-(?:mobile_|PUKEKO_)\d+\.\d+\.\d+$' } |
+        Sort-Object -Descending { Pad ([int[]](($_ -replace '^mobile-(?:mobile_|PUKEKO_)', '') -split '\.')) }
 }
 
 # 1. Working tree must be clean, otherwise the tag would not include pending changes.
@@ -46,15 +48,16 @@ if (git tag -l $tag) {
     throw "Tag $tag already exists."
 }
 
-# 3. Baseline = latest Android release tag that is actually ON THE REMOTE. Desktop's v* tags
-#    must not leak in here, and an unpushed local tag is not a release.
+# 3. Baseline = latest Android release tag that is actually ON THE REMOTE. Other
+#    repositories' tags cannot leak in here (they live in their own repos), and an
+#    unpushed local tag is not a release.
 $remoteTags = (git ls-remote --tags --refs origin) |
     ForEach-Object { ($_ -split 'refs/tags/')[1] } |
     Where-Object { $_ }
 $latestPushed = Get-AndroidTags $remoteTags | Select-Object -First 1
 
 if ($latestPushed) {
-    $latestNum = $latestPushed -replace '^(mobile_|PUKEKO_)', ''
+    $latestNum = $latestPushed -replace '^mobile-(?:mobile_|PUKEKO_)', ''
     if ((Pad $newParts) -le (Pad ([int[]]($latestNum -split '\.')))) {
         throw "Version $Version is not higher than the latest pushed tag $latestPushed; bump the version."
     }
@@ -71,8 +74,8 @@ if ($latestLocal -and $latestLocal -ne $latestPushed) {
 
 # 4. Confirm the current branch.
 $branch = git rev-parse --abbrev-ref HEAD
-if ($branch -ne 'mobile_andorid') {
-    Write-Warning "Current branch is $branch (releases are usually tagged on mobile_andorid)."
+if ($branch -ne 'main') {
+    Write-Warning "Current branch is $branch (releases are usually tagged on main)."
 }
 
 # 5. Create an annotated tag (git describe prefers annotated tags).

@@ -63,8 +63,9 @@ Hop 预览保存在 `design-assets/hop`，表盘资源需随绘制器变更手�
 
 ## Android / Wear 8.0.0
 
-本分支是 Android 手机与 Wear OS 的 `8.0.0` 发布线；正式标签为
-`mobile_8.0.0`。手机、手表应用和两款表盘共享 `shared` 中的设计令牌与同步协议。
+本仓库是 Android 手机与 Wear OS 客户端的**独立仓库**（`tplanner-android`），
+不是任何仓库的分支。桌面端在 `tplanner-desktop`，中央服务在 `tplanner-server`。
+正式标签为 `mobile_8.0.0`。手机、手表应用和两款表盘共享 `shared` 中的设计令牌与同步协议。
 
 同步 UI 遵守单向数据流：用户手势、冷启动或定时刷新只向进程级 `SyncCoordinator`
 提交请求；`operationId` 标识真实事务，页面只观察
