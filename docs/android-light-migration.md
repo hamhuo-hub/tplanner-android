@@ -70,6 +70,8 @@
   一并消失）。主界面只剩 Timeline + 底部 Plan 输入条 + 右上角控制器（`ui/DayControlDock.kt`）：
   一个 `Transition(expanded)` 让同一枚控制点长成控制组，内含 Inbox/今天、连体 `‹ ›` 日期
   胶囊、设置。`MainLayout` 因此只剩 `showInbox` 一个开关。
+- 底部新增"回今天"的圆点（`ReturnToTodayDot`）：只在翻到别的日期时出现，落在 Plan 输入条上方，
+  点击回到今天并触发一次日期提示；视觉只是一个点，触摸目标是它外面的 48dp。
 - Plan 正文改为**不落盘**：删掉 `JournalStore` / `JournalActions` / `JournalDayRollover`
   与草稿、恢复、冲突弹窗、跨零点提交那一整套；正文只是 `MainScreen` 里的会话状态，
   退出即销毁。只有预览里点过「确认添加」的日程会写入。`JcalProjection.toDisplayItems()`

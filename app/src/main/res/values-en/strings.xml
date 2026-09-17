@@ -16,6 +16,7 @@
     <string name="timeline_previous_days">Previous day</string>
     <string name="timeline_next_days">Next day</string>
     <string name="day_control_open">Page controls</string>
+    <string name="day_back_to_today">Back to today</string>
     <string name="day_control_close">Close page controls</string>
     <string name="timeline_conflict_count">Conflicts with %1$d items</string>
     <string name="timeline_drag_hint">Long press to move · snaps every 10 min</string>

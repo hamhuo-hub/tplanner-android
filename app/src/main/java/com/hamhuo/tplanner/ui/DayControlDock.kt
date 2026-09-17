@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -49,6 +51,8 @@ import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 private val DockControlSize = 44.dp
 private val DockIconSize = 20.dp
 private val DockControlGap = 8.dp
+private val DockTodayDotSize = 12.dp
+private val DockTouchTargetSize = 48.dp
 private val DockEdgePadding = 12.dp
 
 /**
@@ -176,6 +180,43 @@ private fun CircleControlButton(
                 contentDescription = null,
                 tint = DIM,
                 modifier = Modifier.size(DockIconSize),
+            )
+        }
+    }
+}
+
+/**
+ * 回今天的小圆点：只在翻到别的日期时出现，落在底部输入条上方。
+ *
+ * 视觉上就只是一个点（日历里"今天"的写法），触摸目标是它外面那圈 48dp。
+ */
+@Composable
+fun ReturnToTodayDot(visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(Tokens.Semantic.Motion.Standard.toInt())) + scaleIn(
+            animationSpec = tween(Tokens.Semantic.Motion.Standard.toInt()),
+            initialScale = 0.85f,
+        ),
+        exit = fadeOut(tween(Tokens.Semantic.Motion.Fast.toInt())) + scaleOut(
+            animationSpec = tween(Tokens.Semantic.Motion.Fast.toInt()),
+            targetScale = 0.85f,
+        ),
+    ) {
+        val description = stringResource(R.string.day_back_to_today)
+        Box(
+            // 间距画在内容上：收起时 AnimatedVisibility 是 0 尺寸，不会在底部留下空档。
+            modifier = modifier
+                .size(DockTouchTargetSize)
+                .clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
+                .semantics { contentDescription = description },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(DockTodayDotSize)
+                    .clip(CircleShape)
+                    .background(GOLD),
             )
         }
     }
