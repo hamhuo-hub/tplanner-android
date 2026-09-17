@@ -388,10 +388,14 @@ P1–P2 可以只动 `mobile_andorid`；P3 必须在 `.v5-worktrees/desktop`（`
   `prompt_cache_miss_tokens`、`reasoning_tokens`、`elapsed_ms`、`degraded`。
 - **失败注入**：429 / 500 / 超时 / 空 `tool_calls` / `finish_reason=length` 截断 / 非法 JSON，
   逐项确认走兜底而不是走空列表。
-> **约定**：这些单元测试**不进仓库**（`.gitignore` 排除 `/app/src/test`），源文件只保留在本地工作区。
-> 重新启用需要两步：删掉 `.gitignore` 里的 `/app/src/test` 那行，并在 `gradle/libs.versions.toml`
-> 加回 `junit = "4.13.2"` 与对应 `[libraries]` 条目、在 `app/build.gradle.kts` 加回
-> `testImplementation(libs.junit)`。不这么做的原因是：没有测试源时留着 JUnit 依赖只是多余的构建噪音。
+> **约定**：这些单元测试**不进仓库**（`.gitignore` 排除 `/app/src/test`）。源文件备份在
+> `.ai-skill-tests/`（同样被忽略）。恢复四步：
+> 1. `mkdir -p app/src/test/java/com/hamhuo/tplanner/ai && cp .ai-skill-tests/*.kt $_`；
+> 2. `.gitignore` 删掉 `/app/src/test`；
+> 3. `gradle/libs.versions.toml` 加回 `junit = "4.13.2"` 与 `junit = { group = "junit", … }`；
+> 4. `app/build.gradle.kts` 加回 `testImplementation(libs.junit)`。
+>
+> 之所以不把 JUnit 依赖留在提交里：没有测试源时它只是构建噪音。
 
 - **已落地的手机端测试**（`app/src/test/java/com/hamhuo/tplanner/ai/`，45 个用例）：
   `AiJsonTest` 契约层 JSON 读写；`PlanResponseParserTest` 结构性约束与"降级不丢弃"规则；
@@ -400,6 +404,37 @@ P1–P2 可以只动 `mobile_andorid`；P3 必须在 `.v5-worktrees/desktop`（`
   strict 走 beta 端点）与响应解析遥测；`SkillContractFixtureTest` 直接读
   `design-assets/ai-skill/` 的同一份语料、按 `assertions.md` 的语义断言结构。
   测试**不需要网络、不需要 API key、不需要 Robolectric**：契约层是纯 JVM 逻辑。
+
+### 10.1 实测记录：`tool_arguments_unparsable` 是怎么来的
+
+第一次真机联调时，界面报的是"AI 服务不可用"，但设备日志（`adb logcat | grep TplannerLLM`）显示
+请求本身完全成功：
+
+```
+phase=init skill=tplanner.plan-extract@1 keyConfigured=true modelAvailable=true
+phase=telemetry … topics=0 actions=0 finish=tool_calls toolCall=true cache_hit=2816 cache_miss=251
+phase=route … result=empty reason=tool_arguments_unparsable
+```
+
+也就是说：密钥有效、模型活着、工具被调用了，**失败在客户端解析**。用真实提示词与 schema 回放
+同一条输入后原因很清楚——用户输入是"测试一下"，模型正确地什么都没提取：
+
+```json
+{"understanding":"你只是打了句「测试一下」，没有描述任何待办事项，所以我没有生成主题。",
+ "topics":[],"assumptions":[],"needs_clarification":[]}
+```
+
+而解析器当时把"空主题且没有附加说明"当成了解析失败（抛异常），于是：
+模型答了 → 解析器报错 → 界面说"AI 服务不可用"。**一个正常的"没有待办"被显示成了服务故障。**
+
+修法两条，都在这一节的前提上：
+
+1. **空主题是合法结果**，不是解析失败。`PlanResponseParser` 不再抛异常，界面改为显示模型自己的
+   说明（`R.string.ai_no_task`），于是"没有待办"和"服务不可用"终于是两句不同的话。
+2. 解析失败时按**结构原因**记日志（工具名、参数长度、异常文本），不记参数正文——正文里是用户原文。
+
+这条经验对 `assertions.md` 的词表直接有用：`empty-topics-when-not-a-task` 不是边角用例，
+而是**第一个在真机上暴露出来的路径**。
 
 ## 11. 风险与开放问题
 

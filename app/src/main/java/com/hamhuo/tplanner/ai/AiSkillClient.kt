@@ -1,5 +1,7 @@
 package com.hamhuo.tplanner.ai
 
+import android.util.Log
+
 /**
  * 一次提取的结果。**"模型没给结果"和"模型给了但结构不可用"必须分开**，
  * 否则界面只能对两种情况都说"AI 服务不可用"，用户永远不知道发生了什么。
@@ -189,8 +191,12 @@ internal class AiSkillClient(
                 val proposal = PlanResponseParser.parseToolArguments(named.arguments)
                 finish(proposal, base, degraded = false)
             } catch (error: PlanParseException) {
+                Log.w(TAG, "phase=parse result=failed tool=$AI_SKILL_TOOL_NAME args=${named.arguments.length} " +
+                    "detail=${error.message.orEmpty().take(LOG_DETAIL_CHARS)}")
                 PlanOutcome.Empty("tool_arguments_unparsable", error.message.orEmpty(), base)
             } catch (error: AiJsonException) {
+                Log.w(TAG, "phase=parse result=failed tool=$AI_SKILL_TOOL_NAME args=${named.arguments.length} " +
+                    "detail=${error.message.orEmpty().take(LOG_DETAIL_CHARS)}")
                 PlanOutcome.Empty("tool_arguments_unparsable", error.message.orEmpty(), base)
             }
         }
@@ -276,7 +282,11 @@ internal class AiSkillClient(
     }
 
     private companion object {
+        const val TAG = "TplannerLLM"
         const val MAX_SCHEDULE_FACTS = 20
         const val CONTENT_SAMPLE_CHARS = 120
+
+        /** 只记解析器报出的结构原因，不记参数正文：正文里是用户的原文。 */
+        const val LOG_DETAIL_CHARS = 160
     }
 }

@@ -739,9 +739,17 @@ fun MainScreen(
                 } else {
                     Log.w(LLM_LOG_TAG, "phase=route request=$requestId result=empty reason=${extraction.reason}")
                     thinking = false
+                    val understanding = extraction.proposal?.understanding.orEmpty()
                     Toast.makeText(
                         context,
-                        if (extraction.reason == "empty_input") R.string.ai_empty_input else R.string.ai_service_unavailable,
+                        when {
+                            extraction.reason == "empty_input" -> context.getString(R.string.ai_empty_input)
+                            // 模型正常回答、只是没有待办：它能说清原因，就直接告诉用户。
+                            understanding.isNotBlank() ->
+                                context.getString(R.string.ai_no_task, understanding)
+
+                            else -> context.getString(R.string.ai_service_unavailable)
+                        },
                         Toast.LENGTH_LONG,
                     ).show()
                 }

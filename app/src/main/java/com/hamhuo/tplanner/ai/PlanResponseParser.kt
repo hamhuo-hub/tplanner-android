@@ -59,9 +59,9 @@ internal object PlanResponseParser {
             )
         }
 
-        if (topics.isEmpty() && assumptions.isEmpty() && clarification.isEmpty()) {
-            throw PlanParseException("模型既没有给出主题，也没有说明原因")
-        }
+        // 空主题是**合法结果**，不是解析失败：用户输入不像待办时，模型会正确地什么都不提取，
+        // 并在 understanding 里说明原因。把它当异常处理会让界面只能报"AI 服务不可用"，
+        // 把"模型答了但没有待办"与"模型不可用"混成同一件事。
         return PlanProposal(
             understanding = text(body, "understanding", MAX_UNDERSTANDING_CHARS),
             topics = topics,

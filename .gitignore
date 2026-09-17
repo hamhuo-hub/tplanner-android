@@ -66,8 +66,10 @@ src/assets/react.svg
 /.gradle
 /app/build
 /wear/build
-# AI 契约层（docs/ai-skill.md §10）的单元测试按约定不进仓库；测试源保留在本地工作区。
+# AI 契约层的单元测试按约定不进仓库（docs/ai-skill.md §10）。
+# 测试源备份在 .ai-skill-tests/，恢复方式见该文档；需要 junit + testImplementation 两个条目。
 /app/src/test
+/.ai-skill-tests
 /.kotlin
 /capacitor-cordova-android-plugins
 local.properties

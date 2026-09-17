@@ -95,6 +95,7 @@
     <string name="schedule_create_failed_toast">日程创建失败，请重试</string>
     <string name="ai_service_unavailable">AI 服务未配置或连接失败，请检查 API Key 或网络后重试</string>
     <string name="ai_local_fallback">模型不可用，已改用本地规则识别；结果较粗糙，请核对后再确认</string>
+    <string name="ai_no_task">没有提取到待办：%1$s</string>
     <string name="ai_empty_input">没有读到内容，请写点什么再试</string>
     <string name="location_locating">正在定位…</string>
     <string name="location_unavailable">未获取位置</string>
