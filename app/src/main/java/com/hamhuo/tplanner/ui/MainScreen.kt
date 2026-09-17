@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -602,14 +601,6 @@ fun MainScreen(
                     }
                 },
                 planPanel = {
-                    // 翻到别的日期时，底部浮出一个回今天的圆点（点一下就回来，顺带报一下日期）。
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        ReturnToTodayDot(
-                            visible = displayedDay != appToday(),
-                            onClick = { timelineState.goToDate(appToday()) },
-                            modifier = Modifier.padding(bottom = Tokens.Semantic.Spacing.Inline.dp),
-                        )
-                    }
                     MiniPlanBar(
                         planText = planText,
                         placeholder = stringResource(R.string.plan_edit_hint),
@@ -674,6 +665,8 @@ fun MainScreen(
                 dockExpanded = false
                 panelOpen = true
             },
+            // 回到今天：换日提示会自己报一次日期。
+            onToday = { timelineState.goToDate(appToday()) },
             modifier = Modifier.fillMaxSize(),
             // 不在今天时，控制点自己带一个极小的日期。
             dayBadge = displayedDay.takeIf { it != appToday() }?.dayOfMonth?.toString(),

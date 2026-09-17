@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
      * 导航栏保留——底部导航岛与手势条需要它自己的安全区。
      */
     private fun applyImmersiveMode() {
-        WindowCompat.getInsetsController(window, window.decorView)?.apply {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.statusBars())
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
