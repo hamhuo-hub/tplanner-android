@@ -8,8 +8,6 @@
 | --- | --- |
 | TaskWidget 视图选择 | RoundedCornerShape(RadiusPillDp)，由同文件的重复任务负责人协调应用 |
 | TaskWidget 顶部加号 | CircleShape，由同文件负责人协调应用 |
-| PhoneTabBar 导航项 | 复用 itemShape |
-| TimelineAddButton | CircleShape |
 | TimelineStatusStrip 状态按钮 | 复用 shape |
 
 共享 TPlannerTaskUnitView 的 RippleDrawable 已有圆角内容层，无显式 mask 时以内容层合成结果遮罩；原实现无需修改。[Android RippleDrawable 文档](https://developer.android.com/reference/android/graphics/drawable/RippleDrawable)

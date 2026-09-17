@@ -11,30 +11,26 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.hamhuo.tplanner.PhoneGeometry as TPlannerGeometry
 
 /**
- * The single application frame.
+ * The single application frame: one card, two surfaces.
  *
- * 原来按 `screenWidthDp < 840` 分成"手机"和"宽屏两栏"两套排版，现在只有这一套：
- * 「今天」= 时间轴 + Note，「Inbox」= 任务列表。折叠屏与宽屏暂时复用同一排版，
- * 更通用的自适应方案（分栏 / 铰链 / 后置屏）以后单独设计，不在这里预留分叉。
+ * 主界面底部不再有任何导航条——底栏那条悬浮岛已删除。切换 Inbox / 今天、翻日期、
+ * 进设置全部收在右上角那一个控制器里（[DayControlDock]）。于是这一屏真正常驻的只有
+ * 三样东西：Timeline、底部的 Plan 输入条、右上角控制点。
+ *
+ * 折叠屏与外接大屏暂时复用同一套排版；更通用的自适应方案以后单独设计。
  */
 @Composable
 internal fun MainLayout(
-    phoneTab: Int,
-    onPhoneTabSelected: (Int) -> Unit,
-    onViewSheetRequest: () -> Unit,
-    chromeHidden: Boolean,
-    chromeMode: ChromeMode,
-    onNavigationRequested: () -> Unit,
+    showInbox: Boolean,
     dayCard: @Composable () -> Unit,
     taskCard: @Composable () -> Unit,
 ) {
-    // 系统栏只在这里让位一次：键盘的内边距归 Note 面板自己处理，避免叠加。
+    // 系统栏只在这里让位一次：键盘的内边距归 Plan 面板自己处理，避免叠加。
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)) {
         Card(
             modifier = Modifier
@@ -45,30 +41,10 @@ internal fun MainLayout(
             colors = CardDefaults.cardColors(containerColor = SURFACE),
             elevation = CardDefaults.cardElevation(0.dp),
         ) {
-            val tabStateHolder = rememberSaveableStateHolder()
-            tabStateHolder.SaveableStateProvider(phoneTab) {
-                // 时间轴与 Note 已经在同一个界面里，第一格就是"今天"。
-                when (phoneTab) {
-                    1 -> taskCard()
-                    else -> dayCard()
-                }
+            val surfaceStateHolder = rememberSaveableStateHolder()
+            surfaceStateHolder.SaveableStateProvider(showInbox) {
+                if (showInbox) taskCard() else dayCard()
             }
         }
-
-        PhoneTabBar(
-            selected = phoneTab,
-            onSelect = { selected ->
-                if (selected == 1 && phoneTab == 1) onViewSheetRequest()
-                onPhoneTabSelected(selected)
-            },
-            modifier = Modifier.align(Alignment.BottomCenter),
-            presentation = when {
-                chromeHidden -> PhoneTabBarPresentation.Hidden
-                chromeMode == ChromeMode.PrimaryNavigation ->
-                    PhoneTabBarPresentation.Expanded
-                else -> PhoneTabBarPresentation.HandleOnly
-            },
-            onExpandRequest = onNavigationRequested,
-        )
     }
 }

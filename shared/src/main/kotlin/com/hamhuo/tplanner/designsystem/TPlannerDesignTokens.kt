@@ -276,7 +276,6 @@ object TPlannerLightTokens {
             const val ShadowY: Float = 2f
         }
         object Plan {
-            const val BarClearance: Float = 64f
             const val BarHeight: Float = 56f
             const val BarRadius: Float = 12f
             const val SheetBottomBarHeight: Float = 56f

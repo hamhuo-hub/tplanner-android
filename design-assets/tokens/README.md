@@ -88,9 +88,8 @@ python scripts/generate-design-tokens.py --check --android
 | --- | --- | --- |
 | `component.agenda.timeGutterWidth` | `24px` | 时间刻度槽宽；刻度数字旋转后只占一行字高 |
 | `component.agenda.hourLabelRotation` | `-90` | 刻度数字的旋转角度，负值自下而上阅读 |
-| `component.plan.barHeight` | `56px` | 收起的 Plan 条高度，容纳 48px 触摸目标 |
+| `component.plan.barHeight` | `56px` | 收起的 Plan 输入条高度；整条就是触摸目标（底栏已删除，底部只剩它 + 系统手势区） |
 | `component.plan.barRadius` | `card` | Plan 条圆角 |
-| `component.plan.barClearance` | `64px` | Plan 条与悬浮导航岛之间必须留出的高度 |
 | `component.plan.sheetRadius` | `dialog` | 上浮编辑面板的两个上圆角 |
 | `component.plan.sheetTopGap` | `48px` | 顶部留给 "Plan" 字样与关闭入口的缝（面板整体不透明，没有遮罩透明度令牌） |
 | `component.plan.sheetBottomBarHeight` | `56px` | 面板右下角对勾保存条的高度 |

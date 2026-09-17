@@ -66,8 +66,14 @@
 上面记录的 JSON SHA 属于浅色迁移那一批。之后的批次把手机主界面收成一套排版，并逐步删掉
 与"一天一屏"冲突的入口。当前状态：
 
-- 手机底栏只剩 `今天` / `Inbox` 两格（`PhoneTabBar`）。同步设置与同步日志浮层抽成
-  `MainScreen.syncOverlays`，入口是时间轴右上角的悬浮按钮。
+- 手机底栏**已删除**（`PhoneTabBar.kt` 移除，`ChromeMode` / `PRIMARY_NAVIGATION_VISIBLE_MILLIS`
+  一并消失）。主界面只剩 Timeline + 底部 Plan 输入条 + 右上角控制器（`ui/DayControlDock.kt`）：
+  一个 `Transition(expanded)` 让同一枚控制点长成控制组，内含 Inbox/今天、连体 `‹ ›` 日期
+  胶囊、设置。`MainLayout` 因此只剩 `showInbox` 一个开关。
+- Plan 输入条改成"一行可以写的地方"：整条可点，右侧只是一个很小的 `▲`（次级色，按住/聚焦
+  才变强调色），没有圆形底色与橙色大块；`component.plan.barClearance` 随导航岛一起删除。
+- 换日在控制器里，替换掉原来的日期条；换完短暂浮出「M月d日 · 周X」（`DayFlashLabel`），
+  不在今天时控制器显示当天日期数字。
 - 按屏宽分叉的"宽屏两栏"排版已删除（`isPhone` / `screenWidthDp < 840` / `notesCard` /
   `NotesHeader`），折叠屏与大屏暂时复用同一套排版；更通用的自适应方案以后单独设计。
 - 已删除的旧入口：顶部日期条（`TimelineDayHeader`、`TimelineDateWindow`、日期选择器）、
@@ -86,8 +92,8 @@
   位置提示暂不采集。
 - 内边距只在各自使用方让位一次：主界面卡片用 `systemBars`，Plan 面板与预览界面用
   `systemBars ∪ ime`（由调用方传入），根节点不再统一加，避免键盘顶起时叠加两次。
-- 令牌：新增 `component.plan.*`（`barHeight` / `barRadius` / `barClearance` / `sheetRadius` /
-  `sheetTopGap` / `sheetBottomBarHeight`，原 `component.note.*` 随代码一起更名）。
+- 令牌：新增 `component.plan.*`（`barHeight` / `barRadius` / `sheetRadius` / `sheetTopGap` /
+  `sheetBottomBarHeight`，原 `component.note.*` 随代码一起更名；`barClearance` 随底栏删除）。
   颜色仍全部来自既有语义令牌，没有新增色值，对比度配对数量不变（54 必需 + 2 诊断）。
 - 令牌源现状：`design-assets/tokens/tplanner-light.tokens.json`
   SHA-256 `533C6EF5F06BD743CB103722659BE268B0BEECD83B92B8C7B6B86985ED5F2FE0`，

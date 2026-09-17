@@ -12,6 +12,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -103,9 +106,12 @@ private fun Modifier.consumeAllPointerInput(): Modifier = pointerInput(Unit) {
 }
 
 /**
- * 收起状态的 mini plan 条：一行摘要加一个强调色入口。
+ * 底部那条 Plan 输入条，主界面上唯一的常驻入口。
  *
- * 整条都是点击目标，所以右侧圆形入口只是视觉提示，不再单独注册手势。
+ * 它看起来必须像"一行可以写的地方"，而不是一个主操作按钮：
+ * - 整条都是点击目标（高度即触摸区域），右侧只有一个很小的三角提示"这里可以展开"；
+ * - 没有圆形底色、没有强调色大块：三角平时用次级文字色，按住或聚焦时才变强调色；
+ * - 展开之后三角直接消失——用户已经在那张纸上了，不需要第二套提示。
  */
 @Composable
 fun MiniPlanBar(
@@ -118,6 +124,10 @@ fun MiniPlanBar(
     val hasPreview = preview.isNotBlank()
     val shape = RoundedCornerShape(Tokens.Component.Plan.BarRadius.dp)
     val openLabel = stringResource(R.string.plan_open)
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val focused by interactions.collectIsFocusedAsState()
+    val chevronTint = if (pressed || focused) GOLD else DIM
 
     Row(
         modifier = modifier
@@ -126,13 +136,16 @@ fun MiniPlanBar(
             .clip(shape)
             .background(Color(Tokens.Component.Panel.RaisedBackground), shape)
             .border(Tokens.Component.Panel.EdgeWidth.dp, BORDER_SUBTLE, shape)
-            .clickable(onClickLabel = openLabel, role = Role.Button, onClick = onOpen)
-            .padding(
-                start = Tokens.Semantic.Spacing.Block.dp,
-                end = Tokens.Semantic.Spacing.Inline.dp,
-            ),
+            .clickable(
+                interactionSource = interactions,
+                indication = null,
+                onClickLabel = openLabel,
+                role = Role.Button,
+                onClick = onOpen,
+            )
+            .padding(start = Tokens.Semantic.Spacing.Block.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Tokens.Semantic.Spacing.Block.dp),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Semantic.Spacing.Inline.dp),
     ) {
         Text(
             text = if (hasPreview) preview else placeholder,
@@ -143,20 +156,21 @@ fun MiniPlanBar(
             modifier = Modifier.weight(1f),
         )
         Box(
-            modifier = Modifier
-                .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
-                .background(GOLD, CircleShape),
+            modifier = Modifier.size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Default.Edit,
+                Icons.Default.ArrowDropUp,
                 contentDescription = null,
-                tint = ON_ACCENT,
-                modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
+                tint = chevronTint,
+                modifier = Modifier.size(PlanChevronSize),
             )
         }
     }
 }
+
+/** 三角提示只是提示：不参与触摸目标，真正的目标永远是整条。 */
+private val PlanChevronSize = 20.dp
 
 /** 纸在"交给 TPlanner"那一刻收拢的比例：很小的物理反馈，不是特效。 */
 private const val SubmittingScale = 0.985f

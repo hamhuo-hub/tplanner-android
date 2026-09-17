@@ -61,19 +61,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 private const val LLM_LOG_TAG = "TplannerLLM"
-private const val PRIMARY_NAVIGATION_VISIBLE_MILLIS = 2_500L
 private const val JOURNAL_DAY_POLL_MILLIS = 30_000L
+
+/** 换日提示停留多久：足够看清，又不占着屏幕。 */
+private const val DAY_FLASH_MILLIS = 1_000L
 
 /** 新卡片出现动画的时长：只让"刚刚确认的那几条"亮一下，之后恢复正常渲染。 */
 private const val PLAN_REVEAL_MILLIS = 1_200L
-
-internal enum class ChromeMode {
-    Minimal,
-    PrimaryNavigation,
-}
 
 private fun Throwable.locationForLog(): String {
     val frame = stackTrace.firstOrNull { it.className.startsWith("com.hamhuo.tplanner") }
@@ -571,9 +569,10 @@ fun MainScreen(
         }
     }
 
-    var phoneTab by rememberSaveable { mutableStateOf(0) } // 0=今天（时间轴 + Plan）, 1=Inbox
-    var chromeMode by remember { mutableStateOf(ChromeMode.PrimaryNavigation) }
-    var primaryNavigationGeneration by remember { mutableIntStateOf(0) }
+    // 主界面只有两面：今天（时间轴 + Plan 条）与 Inbox。没有底栏，
+    // 两者之间的切换、翻日期、进设置全部收在右上角那一个控制器里。
+    var showInbox by rememberSaveable { mutableStateOf(false) }
+    var dockExpanded by remember { mutableStateOf(false) }
     var selectedViewKey by rememberSaveable { mutableStateOf(TaskView.Today.key) }
     val selectedView = TaskView.fromKey(selectedViewKey)
     var showViewSheet by remember { mutableStateOf(false) }
@@ -668,7 +667,9 @@ fun MainScreen(
             onConflict = { itemConflict = it },
         )
     }
-    val chromeHidden = planStage != PlanStage.Collapsed ||
+    // 有东西占满屏幕（纸、控制器展开、编辑面板）时，应用级下拉手势必须让位。
+    val fullScreenSurfaceOpen = planStage != PlanStage.Collapsed ||
+        dockExpanded ||
         showViewSheet ||
         taskWidgetModalVisible ||
         pendingNewItem != null ||
@@ -677,19 +678,25 @@ fun MainScreen(
         // 未保存确认弹窗也压住底栏，避免两个出口同时可用。
         planUnsavedPrompt
 
-    LaunchedEffect(chromeHidden) {
-        if (chromeHidden) chromeMode = ChromeMode.Minimal
-    }
-    LaunchedEffect(
-        chromeMode,
-        phoneTab,
-        primaryNavigationGeneration,
-        chromeHidden,
-    ) {
-        if (!chromeHidden && chromeMode == ChromeMode.PrimaryNavigation) {
-            delay(PRIMARY_NAVIGATION_VISIBLE_MILLIS)
-            chromeMode = ChromeMode.Minimal
+    // 换日之后短暂报一下"你在哪一天"：主界面没有 header，方向感靠这一下。
+    var dayFlashVisible by remember { mutableStateOf(false) }
+    var dayFlashGeneration by remember { mutableIntStateOf(0) }
+    var lastSeenDay by remember { mutableStateOf(journalDateKey) }
+    LaunchedEffect(journalDateKey) {
+        if (journalDateKey != lastSeenDay) {
+            lastSeenDay = journalDateKey
+            dayFlashGeneration++
         }
+    }
+    LaunchedEffect(dayFlashGeneration) {
+        if (dayFlashGeneration == 0) return@LaunchedEffect
+        dayFlashVisible = true
+        delay(DAY_FLASH_MILLIS)
+        dayFlashVisible = false
+    }
+    val dayFlashPattern = stringResource(R.string.date_pattern_month_day_weekday)
+    val dayFlashFormatter = remember(dayFlashPattern) {
+        DateTimeFormatter.ofPattern(dayFlashPattern)
     }
 
     val taskCardContent: @Composable () -> Unit = {
@@ -740,8 +747,8 @@ fun MainScreen(
                             start = Tokens.Semantic.Spacing.Block.dp,
                             end = Tokens.Semantic.Spacing.Block.dp,
                             top = Tokens.Semantic.Spacing.Inline.dp,
-                            // 悬浮导航岛占据屏幕底部，Plan 条必须停在它上面。
-                            bottom = Tokens.Component.Plan.BarClearance.dp,
+                            // 底栏已删除：底部只剩这条输入条 + 系统手势区。
+                            bottom = Tokens.Semantic.Spacing.Block.dp,
                         ),
                     )
                 },
@@ -789,29 +796,45 @@ fun MainScreen(
                 syncOperation.reason == SyncReason.USER_GESTURE
             },
             onSync = onSync,
-            enabled = !chromeHidden,
+            enabled = !fullScreenSurfaceOpen,
             modifier = Modifier.fillMaxSize(),
         ) {
             MainLayout(
-                phoneTab = phoneTab,
-                onPhoneTabSelected = { selected ->
-                    phoneTab = selected
-                    primaryNavigationGeneration++
-                    chromeMode = ChromeMode.PrimaryNavigation
-                },
-                onViewSheetRequest = { showViewSheet = true },
-                chromeHidden = chromeHidden,
-                chromeMode = chromeMode,
-                onNavigationRequested = {
-                    if (!chromeHidden) {
-                        primaryNavigationGeneration++
-                        chromeMode = ChromeMode.PrimaryNavigation
-                    }
-                },
+                showInbox = showInbox,
                 taskCard = taskCardContent,
                 dayCard = dayCardContent,
             )
         }
+        // 右上角：主页面控制能力都从这一个点长出来（今天/Inbox、上一天/下一天、设置）。
+        DayControlDock(
+            expanded = dockExpanded,
+            onExpandedChange = { dockExpanded = it },
+            destinationLabel = if (showInbox) {
+                stringResource(R.string.timeline_today)
+            } else {
+                stringResource(R.string.list_inbox)
+            },
+            onDestination = {
+                showInbox = !showInbox
+                dockExpanded = false
+            },
+            onPreviousDay = { timelineState.previousPage() },
+            onNextDay = { timelineState.nextPage() },
+            onOpenSettings = {
+                dockExpanded = false
+                panelOpen = true
+            },
+            modifier = Modifier.fillMaxSize(),
+            // 不在今天时，控制点自己带一个极小的日期。
+            dayBadge = journalDate.takeIf { it != appToday() }?.dayOfMonth?.toString(),
+        )
+        DayFlashLabel(
+            text = journalDate.format(dayFlashFormatter),
+            visible = dayFlashVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = Tokens.Semantic.Spacing.Section.dp),
+        )
         syncFeedback?.let { feedback ->
             TPlannerSyncFeedback(
                 presentation = feedback,

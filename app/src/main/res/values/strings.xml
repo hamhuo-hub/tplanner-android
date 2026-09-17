@@ -13,6 +13,10 @@
 
     <!-- 标签 / 区块标题 -->
     <string name="timeline_today">今天</string>
+    <string name="timeline_previous_days">前一天</string>
+    <string name="timeline_next_days">后一天</string>
+    <string name="day_control_open">页面控制</string>
+    <string name="day_control_close">收起页面控制</string>
     <string name="timeline_conflict_count">与 %1$d 个事项冲突</string>
     <string name="timeline_drag_hint">长按拖动 · 每 10 分钟吸附</string>
     <string name="timeline_recurring_task">循环任务</string>

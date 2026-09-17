@@ -118,7 +118,6 @@ export const lightTokens = {
       "shadowY": 2
     },
     "plan": {
-      "barClearance": 64,
       "barHeight": 56,
       "barRadius": 12,
       "sheetBottomBarHeight": 56,
