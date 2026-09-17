@@ -1,10 +1,7 @@
 package com.hamhuo.tplanner
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -15,11 +12,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,60 +26,56 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hamhuo.tplanner.designsystem.TPlannerLightTokens as Tokens
 
 /**
- * 收起时只有一枚控制点；展开后是同一枚点长出来的控制组。
+ * 每一个控制都是同一个规格：44dp 圆 + 20dp 图标。
  *
- * 尺寸是三个功能块加间距算出来的（44 + 10 + 89 + 10 + 48 + 上下 8），
- * 换内容时保持这个算式一致，容器就不会在动画中途跳动。
+ * 这是整个右上角唯一的形状语言——没有父底板、没有描边、没有长方形按钮。
  */
-private val DockCollapsedSize = 44.dp
-private val DockExpandedWidth = 128.dp
-private val DockExpandedHeight = 216.dp
-private val DockChildGap = 10.dp
-private val DockActionHeight = 44.dp
+private val DockControlSize = 44.dp
+private val DockIconSize = 20.dp
+private val DockControlGap = 8.dp
+private val DockEdgePadding = 12.dp
 
 /**
- * 每一块控制自己的 material：半透明悬浮面，没有描边。
+ * 每枚圆自己的 material：半透明悬浮面，没有描边。
  *
- * 展开态不再共享父底板，所以控制点、Inbox、日期胶囊各自带这一层；
- * 也不能设成全透明，否则底下的时间轴会直接穿过文字。
+ * 也不能写成全透明——底下的时间轴会直接穿过文字。
  */
 @Composable
 private fun dockSurface(): Color =
     Color(Tokens.Component.Panel.RaisedBackground).copy(alpha = Tokens.Component.Dock.SurfaceOpacity)
 
 /**
- * 右上角的主页面控制器。
+ * 右上角的主页面控制器：**一列独立圆形按钮**。
  *
- * 它不再代表"设置"，而是**当前页面的控制器**：Inbox / 日期 / 设置都从同一个物理点长出来。
+ * 两条硬规则：
+ * 1. 父 Box/Column 完全透明，只有每一枚圆自己有 surface——不存在"白色面板"，
+ *    也不存在"父底板套子按钮"的分层；
+ * 2. 收起与展开是两套不同的内容，**同一时刻只存在一套**：否则收起的控制点会和展开后的
+ *    某一枚叠在同一个位置。
  *
- * 动画只有**一个** `Transition(expanded)`：容器尺寸、圆角、子项缩放与透明度全部由它驱动，
- * 所以看起来是"按钮本身变成了控制组"，而不是"四个按钮冒出来"。关闭时完全反向。
- *
- * 三个功能块按逻辑关系分组：
- * - Inbox（或回到今天）与设置是独立行为，各自一枚圆；
- * - `‹ / ›` 属于同一条轴，做成连体胶囊——有关系的动作在空间上就是连着的。
+ * 这一版不做 morph 动画：先把形状与层级做对，动画之后单独加。
  */
 @Composable
 fun DayControlDock(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
+    destinationIcon: ImageVector,
     destinationLabel: String,
     onDestination: () -> Unit,
     onPreviousDay: () -> Unit,
@@ -93,26 +84,8 @@ fun DayControlDock(
     modifier: Modifier = Modifier,
     dayBadge: String? = null,
 ) {
-    val transition = updateTransition(targetState = expanded, label = "dayControl")
-    val width by transition.animateDp(label = "dockWidth") {
-        if (it) DockExpandedWidth else DockCollapsedSize
-    }
-    val height by transition.animateDp(label = "dockHeight") {
-        if (it) DockExpandedHeight else DockCollapsedSize
-    }
-    // Transition.animate* 没有 animationSpec 参数：每条曲线走 transitionSpec。
-    val contentAlpha by transition.animateFloat(
-        transitionSpec = { tween(Tokens.Semantic.Motion.Standard.toInt()) },
-        label = "dockContent",
-    ) { if (it) 1f else 0f }
-    val triggerAlpha by transition.animateFloat(
-        transitionSpec = { tween(Tokens.Semantic.Motion.Fast.toInt()) },
-        label = "dockTrigger",
-    ) { if (it) 0f else 1f }
-    val contentScale = 0.92f + 0.08f * contentAlpha
-
     Box(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)) {
-        // 展开时点空白处收起；收起时这一层不存在，时间轴手势不受影响。
+        // 展开时点空白处收起；这一层只在展开时存在，收起态完全不干扰时间轴手势。
         if (expanded) {
             Box(
                 Modifier
@@ -124,185 +97,87 @@ fun DayControlDock(
                         role = Role.Button,
                     ) { onExpandedChange(false) },
             )
-        }
 
-        // 容器本身没有面：它只是一块会伸缩的布局区。共享的是动画状态，
-        // 不是一块可见的父底板——否则三块控制又会被读成"白色面板里的表单按钮"。
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = Tokens.Semantic.Spacing.Block.dp, end = Tokens.Semantic.Spacing.Block.dp)
-                .size(width = width, height = height),
-        ) {
-            // ── 收起：整枚控制点 ────────────────────────────────────────────
-            // 固定 44dp 钉在锚点上（不是 fillMaxSize）：展开时容器会长大，
-            // 这一枚要留在原处淡出，看着才像"它自己长成了控制组"。
-            if (!expanded || triggerAlpha > 0.01f) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .size(DockCollapsedSize)
-                        .graphicsLayer { alpha = triggerAlpha }
-                        .clip(CircleShape)
-                        .background(dockSurface())
-                        .clickable(
-                            enabled = !expanded,
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClickLabel = stringResource(R.string.day_control_open),
-                            role = Role.Button,
-                        ) { onExpandedChange(true) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (dayBadge != null) {
-                        // 不在今天时，控制点自己带一个极小的日期：方向感不靠 header。
-                        Text(
-                            dayBadge,
-                            color = TEXT_PRIMARY,
-                            fontSize = PhoneTypography.PhoneMetaSp.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.GridView,
-                            contentDescription = null,
-                            tint = DIM,
-                            modifier = Modifier.size(DockTriggerIcon),
-                        )
-                    }
-                }
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = DockEdgePadding, end = DockEdgePadding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(DockControlGap),
+            ) {
+                CircleControlButton(
+                    icon = destinationIcon,
+                    description = destinationLabel,
+                    onClick = onDestination,
+                )
+                CircleControlButton(
+                    icon = Icons.Default.KeyboardArrowUp,
+                    description = stringResource(R.string.timeline_previous_days),
+                    onClick = onPreviousDay,
+                )
+                CircleControlButton(
+                    icon = Icons.Default.KeyboardArrowDown,
+                    description = stringResource(R.string.timeline_next_days),
+                    onClick = onNextDay,
+                )
+                CircleControlButton(
+                    icon = Icons.Default.Settings,
+                    description = stringResource(R.string.sync_server_title),
+                    onClick = onOpenSettings,
+                )
             }
-
-            // ── 展开：三个功能块 ────────────────────────────────────────────
-            if (expanded || contentAlpha > 0.01f) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            alpha = contentAlpha
-                            scaleX = contentScale
-                            scaleY = contentScale
-                        }
-                        .padding(Tokens.Semantic.Spacing.InlineTight.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(DockChildGap),
-                ) {
-                    DockPill(label = destinationLabel, onClick = onDestination)
-                    DayStepper(onPreviousDay = onPreviousDay, onNextDay = onNextDay)
-                    DockRoundAction(
-                        icon = Icons.Default.Settings,
-                        description = stringResource(R.string.sync_server_title),
-                        onClick = onOpenSettings,
-                    )
-                }
-            }
+        } else {
+            // 不在今天时这一枚自己显示当天日期：方向感不靠 header。
+            CircleControlButton(
+                icon = Icons.Default.GridView,
+                description = stringResource(R.string.day_control_open),
+                onClick = { onExpandedChange(true) },
+                badge = dayBadge,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = DockEdgePadding, end = DockEdgePadding),
+            )
         }
-    }
-}
-
-private val DockTriggerIcon = 20.dp
-
-/** 独立动作：圆角胶囊，文字是它唯一的说明。 */
-@Composable
-private fun DockPill(label: String, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(Tokens.Semantic.Radius.Control.dp)
-    Box(
-        modifier = Modifier
-            .width(DockExpandedWidth - Tokens.Semantic.Spacing.InlineTight.dp * 2)
-            .height(DockActionHeight)
-            .clip(shape)
-            // 自己带一层 material：没有父底板可依靠，它必须自己浮起来。
-            .background(dockSurface(), shape)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            color = TEXT_PRIMARY,
-            fontSize = PhoneTypography.PhoneMetaSp.sp,
-            maxLines = 1,
-        )
     }
 }
 
 /**
- * 日期导航：两个动作属于同一条轴，所以做成连体胶囊——上圆角 + 下圆角 + 中间一条分隔线，
- * 中间没有第二个容器。以后要支持长按连续翻日，也长在这一个控件上。
+ * 统一规格的圆形控制；[badge] 非空时用它替代图标（当天日期）。
+ *
+ * 44dp 圆同时就是触摸目标，涟漪裁在圆内，不会溢出到隔壁按钮。
  */
 @Composable
-private fun DayStepper(onPreviousDay: () -> Unit, onNextDay: () -> Unit) {
-    val outer = RoundedCornerShape(Tokens.Semantic.Radius.Control.dp)
-    val width = DockExpandedWidth - Tokens.Semantic.Spacing.InlineTight.dp * 2
-    Column(
-        modifier = Modifier
-            .width(width)
-            .clip(outer)
-            // 一次 surface + 中间一条分隔线：上下两半不再各自拥有背景或描边。
-            .background(dockSurface()),
-    ) {
-        StepperHalf(
-            icon = Icons.Default.KeyboardArrowUp,
-            description = stringResource(R.string.timeline_previous_days),
-            onClick = onPreviousDay,
-        )
-        Box(
-            Modifier
-                .width(width)
-                .height(Tokens.Semantic.Stroke.Control.dp)
-                .background(BORDER_SUBTLE),
-        )
-        StepperHalf(
-            icon = Icons.Default.KeyboardArrowDown,
-            description = stringResource(R.string.timeline_next_days),
-            onClick = onNextDay,
-        )
-    }
-}
-
-@Composable
-private fun StepperHalf(
+private fun CircleControlButton(
     icon: ImageVector,
     description: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badge: String? = null,
 ) {
     Box(
-        modifier = Modifier
-            .width(DockExpandedWidth - Tokens.Semantic.Spacing.InlineTight.dp * 2)
-            .height(DockActionHeight)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = TEXT_PRIMARY,
-            modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
-        )
-    }
-}
-
-/** 独立动作：一枚圆。 */
-@Composable
-private fun DockRoundAction(
-    icon: ImageVector,
-    description: String,
-    onClick: () -> Unit,
-) {
-    // 不要再给它一层白色圆底：三种视觉语言（矩形 / 连体胶囊 / 白圆）本身就会显得重。
-    Box(
-        modifier = Modifier
-            .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+        modifier = modifier
+            .size(DockControlSize)
             .clip(CircleShape)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+            .background(dockSurface())
+            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            icon,
-            contentDescription = description,
-            tint = DIM,
-            modifier = Modifier.size(DockTriggerIcon),
-        )
+        if (badge != null) {
+            Text(
+                badge,
+                color = TEXT_PRIMARY,
+                fontSize = PhoneTypography.PhoneMetaSp.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        } else {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = DIM,
+                modifier = Modifier.size(DockIconSize),
+            )
+        }
     }
 }
 
@@ -315,12 +190,8 @@ private fun DockRoundAction(
 fun DayFlashLabel(text: String, visible: Boolean, modifier: Modifier = Modifier) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(
-            tween(Tokens.Semantic.Motion.Standard.toInt()),
-        ),
-        exit = fadeOut(
-            tween(Tokens.Semantic.Motion.Slow.toInt()),
-        ),
+        enter = fadeIn(tween(Tokens.Semantic.Motion.Standard.toInt())),
+        exit = fadeOut(tween(Tokens.Semantic.Motion.Slow.toInt())),
         modifier = modifier,
     ) {
         val shape = RoundedCornerShape(Tokens.Semantic.Radius.Pill.dp)
@@ -328,10 +199,7 @@ fun DayFlashLabel(text: String, visible: Boolean, modifier: Modifier = Modifier)
             modifier = Modifier
                 .clip(shape)
                 // 与控制器同一套分层：它同样浮在时间轴之上，所以同样是半透明面、没有描边。
-                .background(
-                    Color(Tokens.Component.Panel.RaisedBackground)
-                        .copy(alpha = Tokens.Component.Dock.SurfaceOpacity),
-                )
+                .background(dockSurface())
                 .padding(
                     horizontal = Tokens.Semantic.Spacing.Block.dp,
                     vertical = Tokens.Semantic.Spacing.InlineTight.dp,

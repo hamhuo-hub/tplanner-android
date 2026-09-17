@@ -41,7 +41,7 @@ export const lightTokens = {
       "shadowY": 8
     },
     "dock": {
-      "surfaceOpacity": 0.72
+      "surfaceOpacity": 0.88
     },
     "field": {
       "background": "#FFFFFF",

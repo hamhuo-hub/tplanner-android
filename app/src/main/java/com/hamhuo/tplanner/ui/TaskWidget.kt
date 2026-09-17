@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -132,14 +134,14 @@ fun TaskWidget(
     val taskTotal = source.count { it.type == "task" }
     val taskDone  = source.count { it.type == "task" && it.completed }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
-        // 标题行
-        Row(
+        // 标题行：右上角整块留给页面控制器（DayControlDock），这里不放任何按钮，
+        // 否则两枚圆会叠在同一个角落。新建改到底部。
+        Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(TPlannerGeometry.RadiusPillDp.dp))
@@ -164,26 +166,16 @@ fun TaskWidget(
                         modifier = Modifier.size(18.dp),
                     )
                 }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     today.format(DateTimeFormatter.ofPattern(stringResource(R.string.date_pattern_month_day_weekday))),
                     color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (taskTotal > 0) {
                     Text("$taskDone/$taskTotal", color = DIM, fontSize = TPlannerTypography.PhoneTaskTitleSp.sp, fontFamily = FontFamily.SansSerif)
-                }
-                // 右侧 + 按钮
-                Box(
-                    modifier = Modifier
-                        .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
-                        .clip(CircleShape)
-                        .background(CONTROL, CircleShape)
-                        .border(1.dp, BORDER, CircleShape)
-                        .clickable { onAddEvent("task") },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.label_new), tint = ACCENT_TEXT, modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp))
                 }
             }
         }
@@ -195,7 +187,14 @@ fun TaskWidget(
                 Text(stringResource(R.string.task_empty), color = EMPTY_STATE, fontSize = TPlannerTypography.PhoneBodySp.sp)
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(vertical = 4.dp)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(vertical = 4.dp),
+                // 底部给新建按钮让位，最后一行不会被压住。
+                contentPadding = PaddingValues(
+                    bottom = Tokens.Platform.Phone.Geometry.TouchTargetMin.dp +
+                        Tokens.Semantic.Spacing.Section.dp,
+                ),
+            ) {
                 groups.forEach { (label, list) ->
                     if (list.isEmpty()) return@forEach
                     val isNow  = label == groupNowLabel
@@ -235,6 +234,32 @@ fun TaskWidget(
                     }
                 }
             }
+        }
+    }
+
+        // 新建：底部右下角。整屏的右上角已经属于页面控制器，底部才是这一页自己的操作位。
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(
+                    end = Tokens.Semantic.Spacing.Block.dp,
+                    bottom = Tokens.Semantic.Spacing.Block.dp,
+                )
+                .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
+                .clip(CircleShape)
+                .background(CONTROL, CircleShape)
+                .border(1.dp, BORDER, CircleShape)
+                .clickable(role = Role.Button, onClickLabel = stringResource(R.string.label_new)) {
+                    onAddEvent("task")
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = stringResource(R.string.label_new),
+                tint = ACCENT_TEXT,
+                modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
+            )
         }
     }
 }

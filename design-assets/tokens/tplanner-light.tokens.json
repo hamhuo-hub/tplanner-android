@@ -2485,7 +2485,7 @@
       "$description": "右上角控制器：每一块控制各自带一层半透明 material，共享动画状态但不共享可见父底板。边界靠透明度与层次区分，不靠描边——描边会叠出白色 halo。",
       "surfaceOpacity": {
         "$type": "number",
-        "$value": 0.72
+        "$value": 0.88
       }
     },
     "agenda": {

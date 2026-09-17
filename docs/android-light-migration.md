@@ -70,9 +70,11 @@
   一并消失）。主界面只剩 Timeline + 底部 Plan 输入条 + 右上角控制器（`ui/DayControlDock.kt`）：
   一个 `Transition(expanded)` 让同一枚控制点长成控制组，内含 Inbox/今天、连体 `‹ ›` 日期
   胶囊、设置。`MainLayout` 因此只剩 `showInbox` 一个开关。
-- 控制器没有共享的父底板：展开态由控制点、Inbox、日期胶囊各自带 `component.dock.surfaceOpacity`
-  这一层 material（只共享动画状态），并且任何一层都不画 border——"浮在内容上的一组控制"与
-  "白色设置面板"的差别就在这层 surface hierarchy。设置项只有图标 + 隐形触摸区。
+- 控制器收敛成"一列独立圆形按钮"：44dp 圆 + 20dp 图标是右上角唯一的形状语言，父布局完全
+  透明、每枚圆自带 `component.dock.surfaceOpacity` 这一层 material，没有父底板、没有 border
+  （避免圆角处的白色 halo）。收起与展开是两套内容、同一时刻只存在一套——此前两者同时绘制，
+  控制点和展开后的某一枚会叠在同一位置。Inbox 也不再是长方形文字按钮，改用图标。
+  morph 动画暂缓：先把形状与层级做对。
 - Plan 输入条改成"一行可以写的地方"：整条可点，右侧只是一个很小的 `▲`（次级色，按住/聚焦
   才变强调色），没有圆形底色与橙色大块；`component.plan.barClearance` 随导航岛一起删除。
 - 换日在控制器里，替换掉原来的日期条；换完短暂浮出「M月d日 · 周X」（`DayFlashLabel`），

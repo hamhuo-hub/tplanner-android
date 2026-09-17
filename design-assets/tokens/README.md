@@ -103,12 +103,12 @@ python scripts/generate-design-tokens.py --check --android
 
 | 令牌 | 值 | 用途 |
 | --- | --- | --- |
-| `component.dock.surfaceOpacity` | `0.72` | 每块控制自己的 material 透明度，颜色取 `component.panel.raisedBackground`；不要写成全透明 |
+| `component.dock.surfaceOpacity` | `0.88` | 每枚控制圆自己的 material 透明度，颜色取 `component.panel.raisedBackground`；不要写成全透明 |
 
-**展开态没有父底板**：控制点、Inbox、日期胶囊各自带这一层 material，只共享动画状态——
-否则三块控制会被读成"白色面板里的表单按钮"。任何一层都不画 border（浅色底 + 浅色面 +
-浅色边框会在圆角处叠出白色 halo）。`‹ / ›` 连体胶囊只有一次 surface 加中间一条分隔线；
-设置项只有图标加隐形触摸区，没有圆底。
+**右上角只有一种形状语言**：44dp 圆 + 20dp 图标，一列独立圆形按钮；父 Box/Column 完全透明，
+每枚圆自带这一层 material，所以既没有"白色面板"也没有"父底板套子按钮"。任何一层都不画
+border（浅色底 + 浅色面 + 浅色边框会在圆角处叠出白色 halo）。收起与展开是两套内容，
+同一时刻只存在一套。
 
 ## 白边与纵深
 

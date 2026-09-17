@@ -4,22 +4,17 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -36,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -753,30 +747,8 @@ fun MainScreen(
                     )
                 },
             )
-            // 同步设置：日期条删除后，它浮在时间轴右上角。
-            IconButton(
-                onClick = { panelOpen = !panelOpen },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(
-                        top = Tokens.Semantic.Spacing.Block.dp,
-                        end = Tokens.Semantic.Spacing.Block.dp,
-                    )
-                    .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
-                    .background(Color(Tokens.Component.Panel.RaisedBackground), CircleShape)
-                    .border(
-                        Tokens.Semantic.Stroke.Control.dp,
-                        BORDER_SUBTLE,
-                        CircleShape,
-                    ),
-            ) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.sync_server_title),
-                    tint = DIM,
-                    modifier = Modifier.size(Tokens.Platform.Phone.Geometry.IconSize.dp),
-                )
-            }
+            // 设置入口只在右上角控制器里（DayControlDock），这里不再另外浮一个齿轮：
+            // 否则两枚圆会叠在同一个角落。
             syncOverlays()
         }
     }
@@ -809,6 +781,7 @@ fun MainScreen(
         DayControlDock(
             expanded = dockExpanded,
             onExpandedChange = { dockExpanded = it },
+            destinationIcon = if (showInbox) Icons.Default.Today else Icons.Default.Inbox,
             destinationLabel = if (showInbox) {
                 stringResource(R.string.timeline_today)
             } else {
