@@ -25,7 +25,7 @@
     <string name="plan_open">Open plan</string>
     <string name="plan_discard">Discard</string>
     <string name="plan_keep_editing">Keep editing</string>
-    <string name="plan_unsaved_title">This text hasn't been handed over</string>
+    <string name="plan_unsaved_title">This text hasn’t been handed over</string>
     <string name="plan_unsaved_message">Leaving discards it: the plan text is saved nowhere. Use the check mark to hand it to TPlanner, or discard to clear it.</string>
     <string name="list_inbox">Inbox</string>
     <string name="list_today">Today</string>

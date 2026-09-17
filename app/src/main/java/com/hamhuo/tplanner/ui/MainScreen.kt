@@ -698,7 +698,7 @@ fun MainScreen(
         PlanSheet(
             stage = planStage,
             value = planText,
-            onValueChange = { text -> planText = it },
+            onValueChange = { text -> planText = text },
             placeholder = stringResource(R.string.plan_edit_hint),
             onSubmit = { text -> submitPlanForPreview(text) },
             onExitRequest = ::requestPlanExit,
