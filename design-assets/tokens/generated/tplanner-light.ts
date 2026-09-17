@@ -40,6 +40,9 @@ export const lightTokens = {
       "shadowX": 0,
       "shadowY": 8
     },
+    "dock": {
+      "surfaceOpacity": 0.72
+    },
     "field": {
       "background": "#FFFFFF",
       "border": "#7C8087",

@@ -43,6 +43,9 @@ object TPlannerLightTokens {
             const val ShadowX: Float = 0f
             const val ShadowY: Float = 8f
         }
+        object Dock {
+            const val SurfaceOpacity: Float = 0.72f
+        }
         object Field {
             const val Background: Int = 0xFFFFFFFF.toInt()
             const val Border: Int = 0xFF7C8087.toInt()

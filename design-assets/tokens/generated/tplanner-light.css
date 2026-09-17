@@ -26,6 +26,7 @@
   --tp-component-dialog-shadow-spread: 0px;
   --tp-component-dialog-shadow-x: 0px;
   --tp-component-dialog-shadow-y: 8px;
+  --tp-component-dock-surface-opacity: 0.72;
   --tp-component-field-background: #FFFFFF;
   --tp-component-field-border: #7C8087;
   --tp-component-field-error-border: #B3261E;

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -61,6 +60,16 @@ private val DockChildGap = 10.dp
 private val DockActionHeight = 44.dp
 
 /**
+ * 每一块控制自己的 material：半透明悬浮面，没有描边。
+ *
+ * 展开态不再共享父底板，所以控制点、Inbox、日期胶囊各自带这一层；
+ * 也不能设成全透明，否则底下的时间轴会直接穿过文字。
+ */
+@Composable
+private fun dockSurface(): Color =
+    Color(Tokens.Component.Panel.RaisedBackground).copy(alpha = Tokens.Component.Dock.SurfaceOpacity)
+
+/**
  * 右上角的主页面控制器。
  *
  * 它不再代表"设置"，而是**当前页面的控制器**：Inbox / 日期 / 设置都从同一个物理点长出来。
@@ -91,9 +100,6 @@ fun DayControlDock(
     val height by transition.animateDp(label = "dockHeight") {
         if (it) DockExpandedHeight else DockCollapsedSize
     }
-    val radius by transition.animateDp(label = "dockRadius") {
-        if (it) Tokens.Semantic.Radius.Card.dp else DockCollapsedSize / 2
-    }
     // Transition.animate* 没有 animationSpec 参数：每条曲线走 transitionSpec。
     val contentAlpha by transition.animateFloat(
         transitionSpec = { tween(Tokens.Semantic.Motion.Standard.toInt()) },
@@ -120,27 +126,27 @@ fun DayControlDock(
             )
         }
 
+        // 容器本身没有面：它只是一块会伸缩的布局区。共享的是动画状态，
+        // 不是一块可见的父底板——否则三块控制又会被读成"白色面板里的表单按钮"。
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = Tokens.Semantic.Spacing.Block.dp, end = Tokens.Semantic.Spacing.Block.dp)
-                .size(width = width, height = height)
-                .clip(RoundedCornerShape(radius))
-                .background(Color(Tokens.Component.Panel.RaisedBackground))
-                .border(
-                    Tokens.Semantic.Stroke.Control.dp,
-                    BORDER_SUBTLE,
-                    RoundedCornerShape(radius),
-                ),
+                .size(width = width, height = height),
         ) {
             // ── 收起：整枚控制点 ────────────────────────────────────────────
-            if (!expanded) {
+            // 固定 44dp 钉在锚点上（不是 fillMaxSize）：展开时容器会长大，
+            // 这一枚要留在原处淡出，看着才像"它自己长成了控制组"。
+            if (!expanded || triggerAlpha > 0.01f) {
                 Box(
                     Modifier
-                        .fillMaxSize()
+                        .align(Alignment.TopEnd)
+                        .size(DockCollapsedSize)
                         .graphicsLayer { alpha = triggerAlpha }
                         .clip(CircleShape)
+                        .background(dockSurface())
                         .clickable(
+                            enabled = !expanded,
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClickLabel = stringResource(R.string.day_control_open),
@@ -206,8 +212,8 @@ private fun DockPill(label: String, onClick: () -> Unit) {
             .width(DockExpandedWidth - Tokens.Semantic.Spacing.InlineTight.dp * 2)
             .height(DockActionHeight)
             .clip(shape)
-            .background(Color(Tokens.Component.Button.Secondary.Background), shape)
-            .border(Tokens.Semantic.Stroke.Control.dp, Color(Tokens.Component.Button.Secondary.Border), shape)
+            // 自己带一层 material：没有父底板可依靠，它必须自己浮起来。
+            .background(dockSurface(), shape)
             .clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -232,8 +238,8 @@ private fun DayStepper(onPreviousDay: () -> Unit, onNextDay: () -> Unit) {
         modifier = Modifier
             .width(width)
             .clip(outer)
-            .background(Color(Tokens.Component.Button.Secondary.Background))
-            .border(Tokens.Semantic.Stroke.Control.dp, Color(Tokens.Component.Button.Secondary.Border), outer),
+            // 一次 surface + 中间一条分隔线：上下两半不再各自拥有背景或描边。
+            .background(dockSurface()),
     ) {
         StepperHalf(
             icon = Icons.Default.KeyboardArrowUp,
@@ -244,7 +250,7 @@ private fun DayStepper(onPreviousDay: () -> Unit, onNextDay: () -> Unit) {
             Modifier
                 .width(width)
                 .height(Tokens.Semantic.Stroke.Control.dp)
-                .background(Color(Tokens.Component.Button.Secondary.Border)),
+                .background(BORDER_SUBTLE),
         )
         StepperHalf(
             icon = Icons.Default.KeyboardArrowDown,
@@ -283,12 +289,11 @@ private fun DockRoundAction(
     description: String,
     onClick: () -> Unit,
 ) {
+    // 不要再给它一层白色圆底：三种视觉语言（矩形 / 连体胶囊 / 白圆）本身就会显得重。
     Box(
         modifier = Modifier
             .size(Tokens.Platform.Phone.Geometry.TouchTargetMin.dp)
             .clip(CircleShape)
-            .background(Color(Tokens.Component.Button.Secondary.Background))
-            .border(Tokens.Semantic.Stroke.Control.dp, Color(Tokens.Component.Button.Secondary.Border), CircleShape)
             .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -322,8 +327,11 @@ fun DayFlashLabel(text: String, visible: Boolean, modifier: Modifier = Modifier)
         Box(
             modifier = Modifier
                 .clip(shape)
-                .background(Color(Tokens.Component.Panel.RaisedBackground))
-                .border(Tokens.Semantic.Stroke.Control.dp, BORDER_SUBTLE, shape)
+                // 与控制器同一套分层：它同样浮在时间轴之上，所以同样是半透明面、没有描边。
+                .background(
+                    Color(Tokens.Component.Panel.RaisedBackground)
+                        .copy(alpha = Tokens.Component.Dock.SurfaceOpacity),
+                )
                 .padding(
                     horizontal = Tokens.Semantic.Spacing.Block.dp,
                     vertical = Tokens.Semantic.Spacing.InlineTight.dp,

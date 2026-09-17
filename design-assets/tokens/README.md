@@ -97,6 +97,19 @@ python scripts/generate-design-tokens.py --check --android
 颜色仍只来自 `semantic.color.*` 与既有 `component.*` 配对；未保存弹窗沿用语义色与
 `component.dialog` 的圆角，不新增色值。改这些数字只移动布局与圆角，不改变配色。
 
+## 右上角控制器（dock）
+
+控制器浮在时间轴之上，边界必须靠**透明度与层次**区分，不能靠描边：
+
+| 令牌 | 值 | 用途 |
+| --- | --- | --- |
+| `component.dock.surfaceOpacity` | `0.72` | 每块控制自己的 material 透明度，颜色取 `component.panel.raisedBackground`；不要写成全透明 |
+
+**展开态没有父底板**：控制点、Inbox、日期胶囊各自带这一层 material，只共享动画状态——
+否则三块控制会被读成"白色面板里的表单按钮"。任何一层都不画 border（浅色底 + 浅色面 +
+浅色边框会在圆角处叠出白色 halo）。`‹ / ›` 连体胶囊只有一次 surface 加中间一条分隔线；
+设置项只有图标加隐形触摸区，没有圆底。
+
 ## 白边与纵深
 
 业务卡片使用 1 单位浅亮沿和低强度阴影；焦点、输入边界仍使用明确的深色语义。`component.panel` 定义普通层级，`component.dialog` 定义浮层；不要每个任务行都加阴影。
