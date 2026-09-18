@@ -22,6 +22,7 @@ import com.google.android.gms.wearable.Wearable
 import com.hamhuo.tplanner.diagnostics.DiagnosticsErrorCode
 import com.hamhuo.tplanner.diagnostics.DiagnosticsRun
 import com.hamhuo.tplanner.diagnostics.DiagnosticsTransport
+import com.hamhuo.tplanner.syncv5.SyncRejectedException
 import org.json.JSONObject
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
@@ -108,6 +109,11 @@ internal object WatchV5Link {
             error("中继响应与请求不匹配")
         }
         relay.exchange?.completed()
+        // The relay reports the server's rejection as a structured code; carrying it typed keeps
+        // recovery (for example a new device identity after SEQUENCE_GAP) off message parsing.
+        frame.optString("errorCode").takeIf(String::isNotBlank)?.let { code ->
+            throw SyncRejectedException(code, status = 0)
+        }
         return WatchV5Protocol.responseBody(request, frame)
     }
 

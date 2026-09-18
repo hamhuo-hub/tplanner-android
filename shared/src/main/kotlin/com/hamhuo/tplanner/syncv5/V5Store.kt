@@ -48,6 +48,7 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
         val raw = prefs.getString("state", null) ?: error("V5 store unavailable")
         if (raw == cachedState) return cachedDocuments
         val state = JSONObject(raw)
+        val discarded = state.optString(KEY_DISCARD_AFTER_INFLIGHT).takeIf(String::isNotBlank)
         val result = linkedMapOf<String, JcalDocument>()
         state.getJSONArray("records").objects().filterNot { it.getBoolean("deleted") }.forEach {
             val doc = JcalDocument(it.getJSONArray("calendar")); result[doc.uid] = doc
@@ -57,7 +58,11 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
                 val doc = JcalDocument(command.getJSONArray("calendar")); result[doc.uid] = doc
             }
         }
-        state.optJSONObject("inFlight")?.let(::overlay)
+        state.optJSONObject("inFlight")?.let { command ->
+            // A command the user discarded while it was in flight is already gone for this device;
+            // the server is reconciled by the tombstone that follows its receipt.
+            if (commandUid(command) != discarded) overlay(command)
+        }
         state.getJSONArray("queue").objects().forEach(::overlay)
         state.getJSONArray("conflicts").objects().forEach { overlay(it.getJSONObject("command")) }
         val projected = result.values.toList()
@@ -74,6 +79,11 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
     private fun enqueue(state: JSONObject, desired: JSONObject) {
         val uid = commandUid(desired)
         require(state.getJSONArray("conflicts").objects().none { commandUid(it.getJSONObject("command")) == uid }) { "请先处理此事项的同步冲突" }
+        // A newer edit is the user's current intent, so an earlier "discard while in flight" no
+        // longer applies to this UID.
+        if (state.optString(KEY_DISCARD_AFTER_INFLIGHT).takeIf(String::isNotBlank) == uid) {
+            state.remove(KEY_DISCARD_AFTER_INFLIGHT)
+        }
         val queue = state.getJSONArray("queue")
         val existing = queue.objects().firstOrNull { commandUid(it) == uid }
         desired.put("baseRevision", existing?.getLong("baseRevision") ?: recordRevision(state, uid))
@@ -124,18 +134,27 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
         if (receipt != null && command != null && revision >= receipt.getLong("revision")) {
             val uid = commandUid(command)
             val queue = state.getJSONArray("queue")
+            val discarded = state.optString(KEY_DISCARD_AFTER_INFLIGHT).takeIf(String::isNotBlank) == uid
             if (receipt.getString("status") == "applied") {
                 queue.objects().filter { commandUid(it) == uid }.forEach {
                     // This is a successor to our own write, not a rebase over a remote edit.
                     it.put("baseRevision", receipt.getLong("revision"))
                 }
-            } else {
+                if (discarded) {
+                    // The user discarded while this command was in flight and the content is now on
+                    // the server: send a real tombstone with the next sequence instead of pretending
+                    // the command never existed.
+                    enqueue(state, JSONObject().put("operation", "delete").put("uid", uid))
+                }
+            } else if (!discarded) {
                 var local = command
                 for (i in queue.length() - 1 downTo 0) if (commandUid(queue.getJSONObject(i)) == uid) {
                     local = queue.getJSONObject(i); queue.remove(i)
                 }
                 state.getJSONArray("conflicts").put(JSONObject().put("command", local).put("receipt", receipt))
             }
+            // Nothing landed on the server, so a discarded command leaves no conflict behind.
+            state.remove(KEY_DISCARD_AFTER_INFLIGHT)
             state.put("nextSequence", command.getLong("sequence") + 1L)
             state.remove("inFlight"); state.remove("receipt")
         }
@@ -149,11 +168,12 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
     /** Unaccepted UIDs, most recent local edit first. Used to resume an interrupted editor. */
     fun pendingUids(): List<String> = synchronized(lock) {
         val state = read()
+        val discarded = state.optString(KEY_DISCARD_AFTER_INFLIGHT).takeIf(String::isNotBlank)
         val ordered = mutableListOf<String>()
-        state.optJSONObject("inFlight")?.let { ordered += commandUid(it) }
+        state.optJSONObject("inFlight")?.let { if (commandUid(it) != discarded) ordered += commandUid(it) }
         state.getJSONArray("queue").objects().forEach { ordered += commandUid(it) }
         state.getJSONArray("conflicts").objects().forEach { ordered += commandUid(it.getJSONObject("command")) }
-        ordered.distinct().reversed()
+        ordered.distinct().reversed().filterNot { it == discarded }
     }
 
     fun conflicts(): List<JSONObject> = synchronized(lock) { read().getJSONArray("conflicts").objects() }
@@ -161,20 +181,60 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
     /** True when this UID has a local document that the server has not accepted yet. */
     fun isPending(uid: String): Boolean = synchronized(lock) {
         val state = read()
+        if (state.optString(KEY_DISCARD_AFTER_INFLIGHT).takeIf(String::isNotBlank) == uid) {
+            return@synchronized false
+        }
         state.getJSONArray("queue").objects().any { commandUid(it) == uid } ||
             state.optJSONObject("inFlight")?.let { commandUid(it) == uid } == true ||
             state.getJSONArray("conflicts").objects().any { commandUid(it.getJSONObject("command")) == uid }
     }
 
-    /** Drops local edits for one UID without touching the installed mirror. */
+    /**
+     * Drops local edits for one UID without touching the installed mirror.
+     *
+     * A queued command has no sequence yet, so it can simply vanish. An in-flight command is
+     * protocol state: it already owns a `commandId` and a `sequence` the server may have consumed,
+     * and deleting it here would silently break this device's sequence space. The discard is
+     * remembered ([KEY_DISCARD_AFTER_INFLIGHT]) and applied once the receipt resolves.
+     */
     fun discard(uid: String) = mutate { state ->
         val queue = state.getJSONArray("queue")
         for (i in queue.length() - 1 downTo 0) if (commandUid(queue.getJSONObject(i)) == uid) queue.remove(i)
-        state.optJSONObject("inFlight")?.let { if (commandUid(it) == uid) state.remove("inFlight") }
+        state.optJSONObject("inFlight")?.let {
+            if (commandUid(it) == uid) state.put(KEY_DISCARD_AFTER_INFLIGHT, uid)
+        }
         val conflicts = state.getJSONArray("conflicts")
         for (i in conflicts.length() - 1 downTo 0) {
             if (commandUid(conflicts.getJSONObject(i).getJSONObject("command")) == uid) conflicts.remove(i)
         }
+    }
+
+    /**
+     * The server refused this device's sequence space (`SEQUENCE_GAP`): it has already consumed
+     * sequence numbers this device still believes are unused.
+     *
+     * The protocol's recovery is a new device identity, never a guessed `nextSequence`. The old
+     * space is abandoned, the unapplied in-flight command returns to the head of the queue with its
+     * identity cleared (a fresh `commandId` at sequence 1, on a device the server has never seen),
+     * and the server id plus every local document are left exactly as they are.
+     */
+    fun rotateDeviceIdentity() = mutate { state ->
+        val inFlight = state.optJSONObject("inFlight")
+        if (inFlight != null) {
+            val uid = commandUid(inFlight)
+            val queue = state.getJSONArray("queue")
+            // A newer queued edit for the same UID already supersedes the in-flight content, and
+            // `documents()` shows the queue over it, so the older command is simply dropped.
+            if (queue.objects().none { commandUid(it) == uid }) {
+                inFlight.remove("commandId"); inFlight.remove("sequence")
+                val rebuilt = JSONArray().put(inFlight)
+                queue.objects().forEach { rebuilt.put(it) }
+                state.put("queue", rebuilt)
+            }
+            state.remove("inFlight")
+        }
+        state.remove("receipt")
+        state.put("deviceId", UUID.randomUUID().toString()).put("nextSequence", 1L)
     }
     fun resolveConflict(uid: String, reapply: Boolean) = mutate { state ->
         val conflicts = state.getJSONArray("conflicts")
@@ -207,6 +267,9 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
     private fun recordRevision(state: JSONObject, uid: String): Long = state.getJSONArray("records").objects()
         .firstOrNull { recordUid(it) == uid }?.getLong("revision") ?: 0L
     companion object {
+        /** Durable intent: the user discarded the UID that currently owns the in-flight command. */
+        private const val KEY_DISCARD_AFTER_INFLIGHT = "discardAfterInflight"
+
         private val locks = java.util.concurrent.ConcurrentHashMap<String, Any>()
         fun commandUid(command: JSONObject): String = if (command.getString("operation") == "delete") command.getString("uid") else JcalDocument(command.getJSONArray("calendar")).uid
         fun recordUid(record: JSONObject): String = if (record.getBoolean("deleted")) record.getString("uid") else JcalDocument(record.getJSONArray("calendar")).uid

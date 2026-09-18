@@ -38,6 +38,12 @@ class SyncUnresolvedException(
 /** V5 协议码的形状：`SEQUENCE_GAP`、`REVISION_CONFLICT`、`INVALID_DOCUMENT`…… */
 private val V5_ERROR_CODE = Regex("[A-Z][A-Z0-9_]{2,63}")
 
+/**
+ * 设备序列空间被服务器拒绝。恢复方式是换一个新的 `deviceId` 从 1 重新开始
+ * （`V5Store.rotateDeviceIdentity`），而不是猜测服务端期待的 nextSequence。
+ */
+internal const val SEQUENCE_GAP_CODE = "SEQUENCE_GAP"
+
 private const val V5_PROTOCOL_VERSION = 5
 
 interface V5Transport {
@@ -170,6 +176,11 @@ class V5SyncClient(
             }
         } catch (error: Exception) {
             store.setError(error.message ?: "同步失败，修改保留在本机")
+            // 服务器已经消费过我们仍以为未使用的 sequence：协议规定的恢复是换设备身份，
+            // 保留本地内容，下一次尝试用新的 deviceId 从 sequence 1 重新发。
+            if (error is SyncRejectedException && error.code == SEQUENCE_GAP_CODE) {
+                store.rotateDeviceIdentity()
+            }
             // A failed attempt keeps the same immutable command for the next attempt.
             val pendingId = store.inFlightCommandId
             val pendingSequence = store.inFlightSequence

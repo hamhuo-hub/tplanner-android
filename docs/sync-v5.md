@@ -144,6 +144,25 @@ serverId snapshots must not overwrite current state silently; a changed server r
 an explicit reset/reconnect choice of its own. Local edits must survive process restart and transport
 failure. UI state reads the mirror overlaid with still-pending local documents.
 
+The queue and the in-flight slot are different kinds of state, and the UI may only delete
+the first. A queued command has no sequence yet: it may be edited, coalesced or discarded
+freely. An in-flight command already owns a `commandId` and a `sequence` the server may have
+consumed, so deleting it — from a draft discard, a draft cleanup, or any other UI lifecycle —
+silently breaks the device's contiguous sequence space and the server then rejects every
+later batch with `SEQUENCE_GAP`. A discard that targets the in-flight UID is therefore
+deferred: the device hides that document immediately and remembers the intent, then, once
+the receipt resolves, either sends a real tombstone for the UID at the next sequence
+(status `applied`) or drops it with nothing to reconcile (status `conflict`/`rejected`).
+A newer edit of the same UID cancels the deferred discard, because the new edit is the
+user's current intent.
+
+`SEQUENCE_GAP` is recoverable only by the new-identity rule above: keep every local
+document and pending edit, mint a new `deviceId`, restart `nextSequence` at 1, and return an
+unapplied in-flight command to the head of the queue with its `commandId`/`sequence`
+cleared so the next batch mints a fresh identity. Never rewind or guess `nextSequence` from
+the `expectedSequence` the server reports, and never re-send a command whose `commandId` a
+receipt already exists for.
+
 ## Watch and platform adapters
 
 Phone/Watch exchange the same V5 batch/receipt/snapshot JSON, without mapping to separate

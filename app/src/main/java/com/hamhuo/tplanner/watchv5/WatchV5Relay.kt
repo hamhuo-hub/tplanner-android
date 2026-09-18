@@ -11,6 +11,7 @@ import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import com.hamhuo.tplanner.WatchV5Protocol
+import com.hamhuo.tplanner.syncv5.SyncRejectedException
 import com.hamhuo.tplanner.syncv5.V5Http
 import com.hamhuo.tplanner.syncv5.V5Settings
 import org.json.JSONObject
@@ -56,6 +57,9 @@ object WatchV5Relay {
             Log.w("WatchV5Relay", "Relay failed", error)
             JSONObject().put("protocolVersion", 5).put("deviceId", request.getString("deviceId"))
                 .put("requestId", request.getString("requestId"))
+                // 结构化的原因：手表要靠它把服务器拒绝（例如 SEQUENCE_GAP）与传输失败分开，
+                // 而不是去解析人类可读的 message。
+                .put("errorCode", (error as? SyncRejectedException)?.code ?: "RELAY_FAILED")
                 .put("error", error.message ?: "RELAY_FAILED").toString()
         }
     }

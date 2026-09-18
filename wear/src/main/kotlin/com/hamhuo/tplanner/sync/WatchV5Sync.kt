@@ -5,6 +5,8 @@ import android.util.Log
 import com.hamhuo.tplanner.diagnostics.DiagnosticsComponent
 import com.hamhuo.tplanner.diagnostics.DiagnosticsErrorCode
 import com.hamhuo.tplanner.diagnostics.DiagnosticsRun
+import com.hamhuo.tplanner.syncv5.SEQUENCE_GAP_CODE
+import com.hamhuo.tplanner.syncv5.SyncRejectedException
 import com.hamhuo.tplanner.syncv5.V5Store
 import org.json.JSONObject
 
@@ -119,6 +121,11 @@ internal object WatchV5Sync {
             } catch (error: Exception) {
                 Log.w(TAG, "V5 synchronization failed; local changes stay queued", error)
                 store.setError(error.message ?: "同步失败，修改保留在本机")
+                // 服务器已经消费过我们仍以为未使用的 sequence：协议规定的恢复是换设备身份，
+                // 保留本地内容，下一轮用新的 deviceId 从 sequence 1 重新发。
+                if (error is SyncRejectedException && error.code == SEQUENCE_GAP_CODE) {
+                    store.rotateDeviceIdentity()
+                }
                 // A failed pass keeps the same immutable command for the next pass.
                 val pendingId = store.inFlightCommandId
                 val pendingSequence = store.inFlightSequence
