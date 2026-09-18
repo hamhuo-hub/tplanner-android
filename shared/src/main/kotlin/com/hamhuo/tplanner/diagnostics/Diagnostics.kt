@@ -33,6 +33,7 @@ object DiagnosticsErrorCode {
     const val NETWORK_TIMEOUT = "NETWORK_TIMEOUT"
     const val NOT_CONFIGURED = "NOT_CONFIGURED"
     const val RESPONSE_UNREADABLE = "RESPONSE_UNREADABLE"
+    const val INVALID_RESPONSE = "INVALID_RESPONSE"
     const val LOCAL_STATE_REJECTED = "LOCAL_STATE_REJECTED"
     const val SYNC_FAILED = "SYNC_FAILED"
 
@@ -42,6 +43,7 @@ object DiagnosticsErrorCode {
      */
     fun of(error: Throwable): String = when (error) {
         is com.hamhuo.tplanner.syncv5.SyncRejectedException -> error.code
+        is com.hamhuo.tplanner.syncv5.SyncUnresolvedException -> error.code ?: SYNC_FAILED
         is java.net.UnknownHostException, is java.net.ConnectException, is java.net.NoRouteToHostException ->
             NETWORK_UNAVAILABLE
         is java.net.SocketTimeoutException -> NETWORK_TIMEOUT

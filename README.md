@@ -66,10 +66,10 @@
 `store.receipt.accepted` 与 `store.inflight.released`。
 
 已在手机上落地（契约 §10 第 2 步）：`DiagnosticsStore` 保存最新 5000 条 / 5 MB 的
-JSON Lines 缓冲区（命名空间 `tplanner_diagnostics`，与 canonical store 完全分离），
+JSON Lines 分段环形缓冲（命名空间 `tplanner_diagnostics`，与 canonical store 完全分离），
 同步链路发出 §5.6 的手机侧事件，设置里的同步日志面板只是这份缓冲区的投影。
-`syncOperationId` 跨尝试复用、收敛后清除，所以后台重试仍能串成同一件工作。
-手表、中继、HTTP `traceparent`、服务器与桌面尚未接入。
+`syncOperationId` 跨尝试复用，只有真正收敛的运行才结束它（冲突与排队中的修改都算未完成），
+所以后台重试仍能串成同一件工作。手表、中继、HTTP `traceparent`、服务器与桌面尚未接入。
 
 ## Hop / 跃时表盘（开发中）
 

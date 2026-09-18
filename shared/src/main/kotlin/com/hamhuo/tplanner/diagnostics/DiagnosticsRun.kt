@@ -23,6 +23,10 @@ class DiagnosticsRun(
     private var opened = false
     private var terminal = false
 
+    /** True only after [runCompleted]: this attempt actually converged, so §7's chain was complete. */
+    var converged: Boolean = false
+        private set
+
     fun runStarted(queueDepth: Int?, inFlightSequence: Long?) {
         if (opened) return
         opened = true
@@ -39,6 +43,7 @@ class DiagnosticsRun(
     fun runCompleted() {
         if (terminal) return
         terminal = true
+        converged = true
         record(DiagnosticsEvents.SYNC_RUN_COMPLETED, DiagnosticsLevel.INFO, DiagnosticsResult.SUCCEEDED, context,
             durationMs = elapsed())
     }
@@ -50,8 +55,11 @@ class DiagnosticsRun(
             errorCode = errorCode, durationMs = elapsed())
     }
 
-    /** The attempt stopped deliberately (nothing to talk to) and the work stays queued. */
-    fun runDeferred(errorCode: String) {
+    /**
+     * The attempt stopped deliberately and the work stays queued. `errorCode` may be absent: §4 only
+     * requires it when the run failed.
+     */
+    fun runDeferred(errorCode: String?) {
         if (terminal) return
         terminal = true
         record(DiagnosticsEvents.SYNC_RUN_DEFERRED, DiagnosticsLevel.WARN, DiagnosticsResult.DEFERRED, context,

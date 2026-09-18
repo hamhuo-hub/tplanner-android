@@ -316,9 +316,16 @@ Any implementation that emits only these is already useful, and they are the fir
 
 `errorCode` reuses V5's existing codes — `UNAUTHORIZED`, `NOT_FOUND`, `BODY_TOO_LARGE`,
 `INVALID_JSON`, `UNSUPPORTED_MEDIA_TYPE`, `INVALID_REQUEST`, `SEQUENCE_GAP`, `COMMAND_ID_REUSE`,
-`INTERNAL_ERROR` — and adds transport-local codes in the same style for
-`transport.request.failed` and `transport.response.failed` (for example `RELAY_UNAVAILABLE`,
-`RESPONSE_UNREADABLE`). A transport code never replaces a protocol code.
+`INTERNAL_ERROR`, `REVISION_CONFLICT`, `INVALID_DOCUMENT` — and adds transport-local codes in the
+same style for `transport.request.failed` and `transport.response.failed` (for example
+`RELAY_UNAVAILABLE`, `RESPONSE_UNREADABLE`, `INVALID_RESPONSE`). A transport code never replaces a
+protocol code.
+
+A response only counts as a **V5 envelope** when it can be recognized as one: a 2xx carries
+`protocolVersion: 5`, and a 4xx/5xx carries a V5-shaped protocol `code`. Anything else — a captive
+portal's HTML, a reverse proxy's `{"message":"Bad Gateway"}` — is `transport.response.failed` with
+`RESPONSE_UNREADABLE` or `INVALID_RESPONSE`, and must never be upgraded into a protocol rejection or
+given an invented code such as `HTTP_502`.
 
 ## 7. What "synchronized" is allowed to mean
 
