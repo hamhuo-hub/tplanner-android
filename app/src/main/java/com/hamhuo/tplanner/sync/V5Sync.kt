@@ -21,7 +21,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.net.URI
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The single V5 synchronization runtime.
@@ -41,6 +43,9 @@ object V5Sync {
      */
     private val syncMutex = Mutex()
 
+    /** Completed converged passes; a waiting call uses it to notice that its work is already done. */
+    private val convergedPasses = AtomicLong()
+
     /** Fire-and-forget after a local commit. Safe to call on every save. */
     fun request(context: Context) {
         val app = context.applicationContext
@@ -49,7 +54,14 @@ object V5Sync {
         enqueue(app)
     }
 
-    /** Blocking convergence used by manual refresh, startup and the WorkManager safety net. */
+    /**
+     * Blocking convergence used by manual refresh, startup and the WorkManager safety net.
+     *
+     * The pass itself is blocking network and store work, so it never runs on the caller's
+     * dispatcher: the sync coordinator calls this from the main thread, and waiting for the lock is
+     * part of that work. Without this, a manual refresh while another pass was running would do DNS
+     * and HTTP on the main thread (`NetworkOnMainThreadException`).
+     */
     suspend fun synchronize(context: Context) {
         val app = context.applicationContext
         val url = V5Settings(app).url
@@ -62,7 +74,22 @@ object V5Sync {
             DiagnosticsStore.finishRun(converged = false)
             throw IllegalArgumentException("请先配置同步地址")
         }
-        syncMutex.withLock { converge(app, url) }
+        val seenPasses = convergedPasses.get()
+        withContext(Dispatchers.IO) {
+            syncMutex.withLock {
+                val store = V5Store(app)
+                // A pass that converged while this call was waiting has already done this call's
+                // work; running a second identical pass would only double the traffic. A pass that
+                // failed does not count, so the safety net still observes the real outcome.
+                if (convergedPasses.get() != seenPasses &&
+                    store.pendingCount == 0 && store.conflicts().isEmpty()
+                ) {
+                    Log.d(TAG, "Skipping a duplicate pass: the pass this call waited for converged")
+                    return@withLock
+                }
+                converge(app, url)
+            }
+        }
     }
 
     private suspend fun converge(app: Context, url: String) {
@@ -76,6 +103,7 @@ object V5Sync {
             runCatching { TPlannerCalendarProjection.reconcile(app, store.documents()) }
             SyncFeedbackBus.publish(SyncFeedbackEvent.CloudAccepted(runCatching { URI(url).host }.getOrDefault(url)))
             run.runCompleted()
+            convergedPasses.incrementAndGet()
         } catch (error: Exception) {
             SyncFeedbackBus.publish(SyncFeedbackEvent.FailedLocally(error.message))
             val unresolved = error as? SyncUnresolvedException

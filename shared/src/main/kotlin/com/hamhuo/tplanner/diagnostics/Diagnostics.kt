@@ -36,6 +36,9 @@ object DiagnosticsErrorCode {
     const val RESPONSE_UNREADABLE = "RESPONSE_UNREADABLE"
     const val INVALID_RESPONSE = "INVALID_RESPONSE"
     const val LOCAL_STATE_REJECTED = "LOCAL_STATE_REJECTED"
+
+    /** The app did blocking platform work on the wrong thread: a bug here, not a synchronization fault. */
+    const val PLATFORM_MISUSE = "PLATFORM_MISUSE"
     const val SYNC_FAILED = "SYNC_FAILED"
 
     /**
@@ -50,6 +53,7 @@ object DiagnosticsErrorCode {
         is java.net.SocketTimeoutException -> NETWORK_TIMEOUT
         is java.net.SocketException -> NETWORK_UNAVAILABLE
         is IllegalArgumentException -> LOCAL_STATE_REJECTED
+        is android.os.NetworkOnMainThreadException -> PLATFORM_MISUSE
         else -> SYNC_FAILED
     }
 
