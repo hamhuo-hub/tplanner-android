@@ -35,10 +35,20 @@ object WatchV5Protocol {
         JSONObject().put("protocolVersion", 5).put("requestId", request.getString("requestId"))
             .put("deviceId", request.getString("deviceId")).put("body", body)
 
+    /**
+     * True when this envelope carries this exact request's answer.
+     *
+     * These three fields are the whole transport-level matching contract; a `body` error is a valid
+     * answer, not a mismatch. The watch uses this to decide whether an exchange completed (envelope
+     * read, parsed and matched) or merely delivered bytes it could not use.
+     */
+    fun matches(request: JSONObject, response: JSONObject): Boolean =
+        response.optInt("protocolVersion", 0) == 5 &&
+            response.optString("deviceId") == request.getString("deviceId") &&
+            response.optString("requestId") == request.getString("requestId")
+
     fun responseBody(request: JSONObject, response: JSONObject): JSONObject {
-        require(response.getInt("protocolVersion") == 5)
-        require(response.getString("deviceId") == request.getString("deviceId"))
-        require(response.getString("requestId") == request.getString("requestId"))
+        require(matches(request, response)) { "V5_RESPONSE_MISMATCH" }
         if (response.has("error")) error(response.getString("error"))
         return response.getJSONObject("body")
     }

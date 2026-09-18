@@ -432,6 +432,9 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
             WatchManualSync.Result.COMPLETED ->
                 context.getString(R.string.task_list_sync_complete) to TPlannerSyncFeedbackTone.SUCCESS
 
+            WatchManualSync.Result.NEEDS_ATTENTION ->
+                context.getString(R.string.task_list_sync_attention) to TPlannerSyncFeedbackTone.ERROR
+
             WatchManualSync.Result.FAILED ->
                 context.getString(R.string.task_list_sync_failed) to TPlannerSyncFeedbackTone.ERROR
         }

@@ -9,6 +9,10 @@ import java.util.concurrent.Executors
 internal object WatchManualSync {
     internal enum class Result {
         COMPLETED,
+
+        /** The pass stored or found a conflict: not a success, and not something retrying fixes. */
+        NEEDS_ATTENTION,
+
         FAILED,
     }
 
@@ -20,7 +24,11 @@ internal object WatchManualSync {
     fun request(context: Context, onComplete: (Result) -> Unit) {
         val appContext = context.applicationContext
         worker.execute {
-            val result = if (WatchV5Sync.synchronize(appContext)) Result.COMPLETED else Result.FAILED
+            val result = when (WatchV5Sync.synchronize(appContext)) {
+                is WatchSyncOutcome.Converged -> Result.COMPLETED
+                is WatchSyncOutcome.NeedsAttention -> Result.NEEDS_ATTENTION
+                is WatchSyncOutcome.Deferred, is WatchSyncOutcome.Failed -> Result.FAILED
+            }
             mainHandler.post { onComplete(result) }
         }
     }

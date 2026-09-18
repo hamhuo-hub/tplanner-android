@@ -27,6 +27,7 @@
     <string name="task_list_syncing">正在同步…</string>
     <string name="task_list_sync_complete">同步完成</string>
     <string name="task_list_sync_failed">同步失敗</string>
+    <string name="task_list_sync_attention">未完成，有待處理</string>
     <string name="task_list_permission_title">需要藍牙權限</string>
     <string name="task_list_permission_hint">輕觸授權，繼續接收手機清單</string>
     <string name="task_list_waiting_title">等待手機清單</string>

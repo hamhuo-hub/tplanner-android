@@ -158,6 +158,10 @@ class V5SyncClient(
             when {
                 unresolvedCode != null ->
                     throw SyncUnresolvedException(unresolvedCode, retryable = false)
+                // An earlier conflict is unfinished work too: a pass that re-sends nothing must not
+                // report success while the user still has a decision to make.
+                store.conflicts().isNotEmpty() ->
+                    throw SyncUnresolvedException(openConflictCode(), retryable = false)
                 store.pendingCount > 0 ->
                     // The per-attempt send budget ran out; the rest stays queued and the next
                     // attempt continues it, which is a deferral rather than a failure.
@@ -173,6 +177,13 @@ class V5SyncClient(
             throw error
         }
     }
+
+    /** The server's code for the oldest stored conflict, when it provided one. */
+    private fun openConflictCode(): String? = store.conflicts().firstOrNull()
+        ?.optJSONObject("receipt")
+        ?.optString("code")
+        ?.takeIf(String::isNotBlank)
+
     companion object { private val syncLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
 }
 

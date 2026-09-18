@@ -9,6 +9,27 @@ import com.hamhuo.tplanner.syncv5.V5Store
 import org.json.JSONObject
 
 /**
+ * What one watch synchronization pass actually achieved.
+ *
+ * "Did synchronization finish" and "is retrying worth anything" are different questions, and one
+ * boolean cannot answer both: a conflict is unfinished work that must never be shown as success,
+ * but it also must not make the outbox retry forever.
+ */
+internal sealed interface WatchSyncOutcome {
+    /** Everything queued was uploaded, confirmed and installed; nothing is pending or unresolved. */
+    data object Converged : WatchSyncOutcome
+
+    /** A receipt came back conflict/rejected, or an earlier one is still unresolved. */
+    data class NeedsAttention(val code: String?) : WatchSyncOutcome
+
+    /** The phone or the network was unreachable; the work stays queued and another pass may help. */
+    data class Deferred(val code: String?) : WatchSyncOutcome
+
+    /** The pass failed for another reason and is worth retrying. */
+    data class Failed(val code: String) : WatchSyncOutcome
+}
+
+/**
  * One V5 synchronization pass for the watch.
  *
  * The sequence mirrors every other V5 client: install the full snapshot, then send the store's one
@@ -28,10 +49,13 @@ internal object WatchV5Sync {
     private val lock = Any()
 
     /**
-     * Blocking; call from a worker. Returns true only when the watch converged with the server:
-     * the UI's "synchronized" may not be built on a transport success or on an unresolved receipt.
+     * Blocking; call from a worker.
+     *
+     * Only [WatchSyncOutcome.Converged] may become the UI's "synchronized": a transport success, a
+     * received response, and a pass that merely did not re-send an older conflict are all
+     * insufficient.
      */
-    fun synchronize(context: Context): Boolean {
+    fun synchronize(context: Context): WatchSyncOutcome {
         val appContext = context.applicationContext
         val store = WatchV5Store.instance(appContext)
         synchronized(lock) {
@@ -65,22 +89,31 @@ internal object WatchV5Sync {
                     // The command left the in-flight slot only after the snapshot that confirms it.
                     if (store.inFlightCommandId == null) run.inflightReleased(commandId, sequence, store.revision)
                 }
-                val unresolved = unresolvedCode
+                val stored = unresolvedCode
+                // An earlier conflict is unfinished work too: a pass that re-sends nothing must not
+                // report success while a decision is still outstanding.
+                val openConflict = if (stored == null) openConflictCode(store) else null
                 when {
-                    unresolved != null -> {
-                        store.setError(unresolved)
-                        run.runFailed(unresolved)
-                        false
+                    stored != null -> {
+                        store.setError(stored)
+                        run.runFailed(stored)
+                        WatchSyncOutcome.NeedsAttention(stored)
+                    }
+                    openConflict != null || store.conflicts().isNotEmpty() -> {
+                        val code = openConflict ?: DiagnosticsErrorCode.SYNC_FAILED
+                        store.setError(code)
+                        run.runFailed(code)
+                        WatchSyncOutcome.NeedsAttention(openConflict)
                     }
                     store.pendingCount > 0 -> {
                         // The per-pass send budget ran out; the rest stays queued for the next pass.
                         run.runDeferred(null)
-                        false
+                        WatchSyncOutcome.Deferred(null)
                     }
                     else -> {
                         store.setError(null)
                         run.runCompleted()
-                        true
+                        WatchSyncOutcome.Converged
                     }
                 }
             } catch (error: Exception) {
@@ -91,14 +124,25 @@ internal object WatchV5Sync {
                 val pendingSequence = store.inFlightSequence
                 if (pendingId != null && pendingSequence != null) run.inflightRetained(pendingId, pendingSequence)
                 val code = DiagnosticsErrorCode.of(error)
-                if (DiagnosticsErrorCode.isDeferral(error)) run.runDeferred(code) else run.runFailed(code)
-                false
+                if (DiagnosticsErrorCode.isDeferral(error)) {
+                    run.runDeferred(code)
+                    WatchSyncOutcome.Deferred(code)
+                } else {
+                    run.runFailed(code)
+                    WatchSyncOutcome.Failed(code)
+                }
             } finally {
                 // Only a converged pass ends the durable work item; conflicts stay unresolved work.
                 DiagnosticsStore.finishRun(converged = run.converged)
             }
         }
     }
+
+    /** The code of the oldest stored conflict, when the server provided one. */
+    private fun openConflictCode(store: V5Store): String? = store.conflicts().firstOrNull()
+        ?.optJSONObject("receipt")
+        ?.optString("code")
+        ?.takeIf(String::isNotBlank)
 
     private fun install(context: Context, store: V5Store, snapshot: JSONObject, run: DiagnosticsRun) {
         // Only the full logical snapshot endpoint is ever installed. The watch never merges a

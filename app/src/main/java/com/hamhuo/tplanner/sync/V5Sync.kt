@@ -19,8 +19,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.net.URI
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The single V5 synchronization runtime.
@@ -33,7 +34,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 object V5Sync {
     private const val TAG = "TplannerSync"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val inFlight = AtomicBoolean(false)
+
+    /**
+     * A second request waits for the pass in progress instead of reporting a success it never
+     * performed: the WorkManager safety net must observe the real outcome, not a skipped run.
+     */
+    private val syncMutex = Mutex()
 
     /** Fire-and-forget after a local commit. Safe to call on every save. */
     fun request(context: Context) {
@@ -56,8 +62,10 @@ object V5Sync {
             DiagnosticsStore.finishRun(converged = false)
             throw IllegalArgumentException("请先配置同步地址")
         }
-        // Another attempt already owns the store: this one never started, so it emits nothing.
-        if (!inFlight.compareAndSet(false, true)) return
+        syncMutex.withLock { converge(app, url) }
+    }
+
+    private suspend fun converge(app: Context, url: String) {
         val store = V5Store(app)
         val run = DiagnosticsStore.beginRun(DiagnosticsComponent.PHONE, store.deviceId)
         run.runStarted(queueDepth = store.pendingCount, inFlightSequence = store.inFlightSequence)
@@ -88,7 +96,6 @@ object V5Sync {
         } finally {
             // Only a converged run ends the durable work item; a conflict is still unresolved work.
             DiagnosticsStore.finishRun(converged = run.converged)
-            inFlight.set(false)
         }
     }
 

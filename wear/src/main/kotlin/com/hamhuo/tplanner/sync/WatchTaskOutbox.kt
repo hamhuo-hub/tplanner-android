@@ -67,8 +67,12 @@ object WatchTaskOutbox {
     fun pendingCount(context: Context): Int = WatchV5Store.pendingCount(context)
 
     internal fun flushFromJob(context: Context): Boolean {
-        val synchronized = WatchV5Sync.synchronize(context.applicationContext)
-        return !synchronized || WatchV5Store.pendingCount(context) > 0
+        // Retrying is only worthwhile when another pass could still make progress on its own:
+        // a converged pass is done, and a conflict waits for the user, not for the scheduler.
+        return when (WatchV5Sync.synchronize(context.applicationContext)) {
+            is WatchSyncOutcome.Converged, is WatchSyncOutcome.NeedsAttention -> false
+            is WatchSyncOutcome.Deferred, is WatchSyncOutcome.Failed -> true
+        }
     }
 
     private fun flushAsync(context: Context) {

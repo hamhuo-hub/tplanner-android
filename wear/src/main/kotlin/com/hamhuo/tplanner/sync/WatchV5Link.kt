@@ -81,6 +81,9 @@ internal object WatchV5Link {
         exchange(context, deviceId, "installed", JSONObject()
             .put("protocolVersion", 5).put("serverId", serverId).put("revision", revision), run)
 
+    /** One medium's answer: the parsed frame, plus the exchange that still owes a terminal event. */
+    private class Relay(val frame: JSONObject?, val exchange: DiagnosticsRun.Exchange?)
+
     private fun exchange(
         context: Context,
         deviceId: String,
@@ -90,14 +93,22 @@ internal object WatchV5Link {
     ): JSONObject {
         val request = WatchV5Protocol.request(deviceId, kind, body)
         val dataLayer = viaDataLayer(context, request, run)
-        val response = if (dataLayer != null) {
+        val relay = if (dataLayer.frame != null) {
             dataLayer
         } else {
             // The Data Layer gave up and RFCOMM begins. The fallback order itself is unchanged.
             run?.fallbackStarted(DiagnosticsTransport.RFCOMM)
-            viaBluetooth(context, request, run) ?: error("无法连接手机，修改保留在本机")
+            viaBluetooth(context, request, run)
         }
-        return WatchV5Protocol.responseBody(request, response)
+        val frame = relay.frame ?: error("无法连接手机，修改保留在本机")
+        // An exchange completes only once the envelope is read, parsed AND matched to this request.
+        // Bytes carrying someone else's answer are an unusable response, not a completed request.
+        if (!WatchV5Protocol.matches(request, frame)) {
+            relay.exchange?.responseFailed(DiagnosticsErrorCode.RESPONSE_UNREADABLE)
+            error("中继响应与请求不匹配")
+        }
+        relay.exchange?.completed()
+        return WatchV5Protocol.responseBody(request, frame)
     }
 
     /**
@@ -108,28 +119,31 @@ internal object WatchV5Link {
      * not be read (`response.failed`) is a different fault from a phone that never answered
      * (`request.failed`), and only this function can tell them apart.
      */
-    private fun viaDataLayer(context: Context, request: JSONObject, run: DiagnosticsRun?): JSONObject? {
+    private fun viaDataLayer(context: Context, request: JSONObject, run: DiagnosticsRun?): Relay {
         val exchange = run?.exchange(DiagnosticsTransport.DATALAYER)
         exchange?.started()
         val client = runCatching { Wearable.getDataClient(context) }.getOrNull()
         if (client == null) {
             exchange?.failed(DiagnosticsErrorCode.RELAY_UNAVAILABLE)
-            return null
+            return Relay(null, exchange)
         }
         val responsePath = WatchV5Protocol.responsePath(request)
         val received = AtomicReference<JSONObject?>()
-        // Set on the callback thread, read after the wait: the response item exists, whatever the
-        // read of its asset then does.
+        // Set on the callback thread, read after the wait: the response item exists, whatever
+        // reading its asset then does.
         val carrierArrived = AtomicBoolean(false)
         val latch = CountDownLatch(1)
         val listener = DataClient.OnDataChangedListener { events: DataEventBuffer ->
             for (event in events) {
                 if (event.type != DataEvent.TYPE_CHANGED) continue
                 if (event.dataItem.uri.path != responsePath) continue
+                // The item on the response path IS the carrier. It is recorded before the asset is
+                // even looked at, so a missing or unreadable packet stays "answered, but unusable"
+                // instead of degrading into "the phone never answered".
+                carrierArrived.set(true)
                 val asset = DataMapItem.fromDataItem(event.dataItem)
                     .dataMap
                     .getAsset(WatchV5Protocol.ASSET_KEY) ?: continue
-                carrierArrived.set(true)
                 dataLayerIo.execute {
                     runCatching { readResponse(client, asset) }
                         .onSuccess { body -> if (received.compareAndSet(null, body)) latch.countDown() }
@@ -166,8 +180,10 @@ internal object WatchV5Link {
             removeRelayItems(client, request)
         }
         return if (body != null) {
-            exchange?.completed()
-            body
+            // Bytes arrived and parsed. The terminal event is not sent here: only the caller can
+            // tell whether the envelope matches this request (§5.3).
+            exchange?.responseReceived()
+            Relay(body, exchange)
         } else {
             if (carrierArrived.get()) {
                 // The item was there; reading it failed. This is the case the earlier main-thread
@@ -177,7 +193,7 @@ internal object WatchV5Link {
             } else {
                 exchange?.failed(DiagnosticsErrorCode.RELAY_UNAVAILABLE)
             }
-            null
+            Relay(null, exchange)
         }
     }
 
@@ -210,13 +226,13 @@ internal object WatchV5Link {
 
     /** Paired-phone RFCOMM fallback for watches without a working Data Layer. */
     @SuppressLint("MissingPermission")
-    private fun viaBluetooth(context: Context, request: JSONObject, run: DiagnosticsRun?): JSONObject? {
+    private fun viaBluetooth(context: Context, request: JSONObject, run: DiagnosticsRun?): Relay {
         val exchange = run?.exchange(DiagnosticsTransport.RFCOMM)
         exchange?.started()
         val phone = pairedPhone(context)
         if (phone == null) {
             exchange?.failed(DiagnosticsErrorCode.RELAY_UNAVAILABLE)
-            return null
+            return Relay(null, exchange)
         }
         var socket: BluetoothSocket? = null
         var frameArrived = false
@@ -233,15 +249,13 @@ internal object WatchV5Link {
             // A complete frame was read: on this medium the carrier and its bytes arrive together.
             frameArrived = true
             exchange?.responseReceived()
-            val response = JSONObject(frame)
-            exchange?.completed()
-            response
+            Relay(JSONObject(frame), exchange)
         } catch (error: Exception) {
             if (error is InterruptedException) Thread.currentThread().interrupt()
             Log.w(TAG, "Bluetooth relay failed", error)
             if (frameArrived) exchange?.responseFailed(DiagnosticsErrorCode.RESPONSE_UNREADABLE)
             else exchange?.failed(DiagnosticsErrorCode.of(error))
-            null
+            Relay(null, exchange)
         } finally {
             runCatching { socket?.close() }
         }
