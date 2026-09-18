@@ -322,8 +322,9 @@ Any implementation that emits only these is already useful, and they are the fir
 
 ## 7. What "synchronized" is allowed to mean
 
-A successful run always converges the local store downwards; it only involves an upload when one was
-actually pending. So the success invariant is conditional, and both branches are strict:
+A successful run always converges the local store downwards; it uploads only when this run actually
+prepares or resumes an outbound command. The condition is therefore causal — what the run did — and
+not a snapshot of the queue taken at its start:
 
 ```
 any successful run:
@@ -334,21 +335,25 @@ any successful run:
     store.snapshot.installed              → snapshot durably installed at revision R
   sync.run.completed
 
-if a command was pending when the run started, additionally, in order:
+if this run emits store.batch.prepared, or began with an unresolved in-flight command:
     store.batch.prepared
     store.receipt.accepted                → receipt status applied, commandId matched
     store.snapshot.installed              → the same install that confirms the receipt
     store.inflight.released               → in-flight resolved, may be dropped
 ```
 
-A download-only run has no in-flight command, so `store.batch.prepared`, `store.receipt.accepted` and
-`store.inflight.released` are absent by definition — not missing, not failed. `store.snapshot.installed`
-alone satisfies store convergence in that case.
+"The run started with no in-flight command" is **not** the criterion. A command can be promoted from
+the queue to in-flight inside the run (`prepareBatch()` takes the queue head), and an immutable
+command can already be in-flight when the run begins (a retry). Both upload, so both require the
+receipt and the release. A download-only run has neither, and by definition emits none of those three
+events — absent, not missing, not failed. `store.snapshot.installed` alone satisfies store convergence
+there.
 
 The invariant, stated once:
 
-> **`sync.run.completed` requires `store.snapshot.installed`. If and only if a command was in flight
-> when the run started, it additionally requires `store.receipt.accepted` and `store.inflight.released`.**
+> **`sync.run.completed` requires `store.snapshot.installed`. If this run prepares or resumes an
+> outbound command, the corresponding `store.receipt.accepted` and `store.inflight.released` must also
+> occur before completion.**
 
 | Evidence | Permitted conclusion |
 | --- | --- |
@@ -360,10 +365,10 @@ The invariant, stated once:
 
 Consequences, both mandatory:
 
-- The watch UI may show "synchronized" only after `sync.run.completed`. With an in-flight command both
-  the receipt and the release must be present; without one, the installed snapshot is the whole
-  criterion. "Bluetooth connected" and "Data Layer response received" are transport facts and must
-  never render as a sync result.
+- The watch UI may show "synchronized" only after `sync.run.completed`. When the run uploaded or
+  resumed a command, both the receipt and the release must be present; for a download-only run the
+  installed snapshot is the whole criterion. "Bluetooth connected" and "Data Layer response received"
+  are transport facts and must never render as a sync result.
 - The phone may report `SyncPhase.SUCCESS` only after the snapshot install and revision confirm, not
   after a successful HTTP call.
 
