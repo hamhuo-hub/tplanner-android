@@ -62,6 +62,7 @@ object DiagnosticsEvents {
     const val TRANSPORT_REQUEST_COMPLETED = "transport.request.completed"
     const val TRANSPORT_REQUEST_FAILED = "transport.request.failed"
     const val TRANSPORT_RESPONSE_FAILED = "transport.response.failed"
+    const val TRANSPORT_FALLBACK_STARTED = "transport.fallback.started"
 }
 
 /**

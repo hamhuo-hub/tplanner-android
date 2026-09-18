@@ -8,6 +8,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.hamhuo.tplanner.calendar.TPlannerCalendarProjection
+import com.hamhuo.tplanner.diagnostics.DiagnosticsComponent
 import com.hamhuo.tplanner.diagnostics.DiagnosticsErrorCode
 import com.hamhuo.tplanner.syncv5.V5Http
 import com.hamhuo.tplanner.syncv5.V5Settings
@@ -49,7 +50,7 @@ object V5Sync {
         // 未配置服务器时保持既有语义：调用方永远看到这个异常，而不是静默返回。
         if (url.isBlank()) {
             val store = V5Store(app)
-            val run = DiagnosticsStore.beginRun(store.deviceId)
+            val run = DiagnosticsStore.beginRun(DiagnosticsComponent.PHONE, store.deviceId)
             run.runStarted(queueDepth = store.pendingCount, inFlightSequence = store.inFlightSequence)
             run.runDeferred(DiagnosticsErrorCode.NOT_CONFIGURED)
             DiagnosticsStore.finishRun(converged = false)
@@ -58,7 +59,7 @@ object V5Sync {
         // Another attempt already owns the store: this one never started, so it emits nothing.
         if (!inFlight.compareAndSet(false, true)) return
         val store = V5Store(app)
-        val run = DiagnosticsStore.beginRun(store.deviceId)
+        val run = DiagnosticsStore.beginRun(DiagnosticsComponent.PHONE, store.deviceId)
         run.runStarted(queueDepth = store.pendingCount, inFlightSequence = store.inFlightSequence)
         try {
             V5SyncClient(store, V5Http(url, run), run).synchronize()

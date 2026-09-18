@@ -101,6 +101,15 @@ class DiagnosticsRun(
     /** A network exchange on one medium, with the three-part boundary of §5.3. */
     fun exchange(transport: String): Exchange = Exchange(transport)
 
+    /**
+     * The first medium gave up and the next one begins (§5.3). It belongs to the run, not to either
+     * exchange; `transport` names the medium that is about to start.
+     */
+    fun fallbackStarted(transport: String) = record(
+        DiagnosticsEvents.TRANSPORT_FALLBACK_STARTED, DiagnosticsLevel.WARN, DiagnosticsResult.STARTED,
+        context, transport = transport,
+    )
+
     inner class Exchange(val transport: String) {
         private val span = context.child()
         private val startedAt = clock()

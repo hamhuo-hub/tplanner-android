@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.hamhuo.tplanner.diagnostics.Diagnostics
-import com.hamhuo.tplanner.diagnostics.DiagnosticsComponent
 import com.hamhuo.tplanner.diagnostics.DiagnosticsEvent
 import com.hamhuo.tplanner.diagnostics.DiagnosticsRun
 import com.hamhuo.tplanner.diagnostics.DiagnosticsSink
@@ -19,10 +18,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 手机上的结构化诊断缓冲区（契约 §8）：最新 5000 条或 5 MB，先到先算，JSON Lines，独立命名空间。
+ * 手机与手表共用的结构化诊断缓冲区（契约 §8）：最新 5000 条或 5 MB，先到先算，JSON Lines，
+ * 独立命名空间。
  *
  * 它与 canonical store（`tplanner_v5`）完全分离，写失败只丢一条事件并计数，绝不阻塞、回滚或
- * 延迟同步。同步日志面板只是这份 buffer 的投影。
+ * 延迟同步。两端共用同一份实现，Watch 与 Phone 的事件语义不会各自漂移；手机上的同步日志面板
+ * 只是这份缓冲区的投影。
  *
  * 落盘是分段环形：追加只写当前 segment，segment 写满 500 条或 1 MB 就开新的一段；超过 5000 条
  * 或累计 5 MB 时整段删除最旧的一段。因此磁盘与内存任何时刻都同时受这两个上限约束，既不需要
@@ -103,8 +104,10 @@ object DiagnosticsStore : DiagnosticsSink {
     /**
      * 一次同步尝试的运行上下文。`syncOperationId` 属于"这件待办工作"，跨尝试、跨进程重启都复用
      * 同一个值（契约 §2）；它在诊断命名空间里，不在 canonical store 里。
+     *
+     * `component` 决定事件归属（`phone` / `watch`），不能由调用点随手写字符串。
      */
-    fun beginRun(deviceId: String?): DiagnosticsRun {
+    fun beginRun(component: String, deviceId: String?): DiagnosticsRun {
         val store = prefs
         val existing = store?.getString(KEY_OPERATION, null)?.takeIf { it.isNotBlank() }
         val operationId = existing ?: UUID.randomUUID().toString()
@@ -115,7 +118,7 @@ object DiagnosticsStore : DiagnosticsSink {
             syncOperationId = operationId,
             attempt = attempt,
             deviceId = deviceId,
-            component = DiagnosticsComponent.PHONE,
+            component = component,
             context = TraceContext.root(),
         )
     }

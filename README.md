@@ -65,11 +65,15 @@
 `store.snapshot.installed`，而本次运行上传或重发了命令时，还必须出现
 `store.receipt.accepted` 与 `store.inflight.released`。
 
-已在手机上落地（契约 §10 第 2 步）：`DiagnosticsStore` 保存最新 5000 条 / 5 MB 的
-JSON Lines 分段环形缓冲（命名空间 `tplanner_diagnostics`，与 canonical store 完全分离），
-同步链路发出 §5.6 的手机侧事件，设置里的同步日志面板只是这份缓冲区的投影。
-`syncOperationId` 跨尝试复用，只有真正收敛的运行才结束它（冲突与排队中的修改都算未完成），
-所以后台重试仍能串成同一件工作。手表、中继、HTTP `traceparent`、服务器与桌面尚未接入。
+已在手机与手表落地（契约 §10 第 2–3 步）：`DiagnosticsStore`（两端共用同一份实现）保存
+最新 5000 条 / 5 MB 的 JSON Lines 分段环形缓冲（命名空间 `tplanner_diagnostics`，
+与 canonical store 完全分离），同步链路发出手机侧与手表侧事件，设置里的同步日志面板
+只是这份缓冲区的投影。`syncOperationId` 跨尝试复用，只有真正收敛的运行才结束它
+（冲突与排队中的修改都算未完成），所以后台重试仍能串成同一件工作。
+手表侧每一跳分别记录：Data Layer 与 RFCOMM 各算一次 exchange，回退本身不变，
+"手机没回"与"回了但读不出来"（`transport.response.failed` / `RESPONSE_UNREADABLE`）
+因此可以区分；手表的"同步完成"提示只由 `sync.run.completed` 触发。
+追踪上下文目前仍是各端本地的，跨设备 `traceparent` 与服务器/桌面接入属于第 4 步之后。
 
 ## Hop / 跃时表盘（开发中）
 
