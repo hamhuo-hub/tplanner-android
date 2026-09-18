@@ -27,6 +27,10 @@ class V5Store(context: Context, namespace: String = "tplanner_v5") {
     val serverId: String? get() = synchronized(lock) { read().optString("serverId").takeIf(String::isNotBlank) }
     val pendingCount: Int get() = synchronized(lock) { read().let { it.getJSONArray("queue").length() + if (it.has("inFlight")) 1 else 0 } }
     val lastError: String? get() = synchronized(lock) { read().optString("lastError").takeIf(String::isNotBlank) }
+
+    /** Identity of the immutable in-flight command, for diagnostics only. Null when none is in flight. */
+    val inFlightCommandId: String? get() = synchronized(lock) { read().optJSONObject("inFlight")?.getString("commandId") }
+    val inFlightSequence: Long? get() = synchronized(lock) { read().optJSONObject("inFlight")?.getLong("sequence") }
     fun setError(error: String?) = mutate { if (error == null) it.remove("lastError") else it.put("lastError", error) }
     fun snapshot(): JSONObject = synchronized(lock) { read().let { state ->
         JSONObject().put("protocolVersion", 5).put("serverId", state.optString("serverId"))

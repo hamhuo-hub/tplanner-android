@@ -47,7 +47,6 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.light(canvas, canvas),
             navigationBarStyle = SystemBarStyle.light(canvas, canvas),
         )
-        SyncLog.init(this)
         applyImmersiveMode()
         advancePermissionSetup()
         lifecycleScope.launch { initializeContent() }

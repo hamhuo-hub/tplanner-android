@@ -333,7 +333,7 @@ fun MainScreen(
     var syncFeedbackGeneration by remember { mutableIntStateOf(0) }
     var presentedSyncOperationId by rememberSaveable { mutableStateOf<String?>(null) }
     var showSyncLogs by remember { mutableStateOf(false) }
-    val syncLogEntries by SyncLog.entries.collectAsState()
+    val diagnosticsEvents by DiagnosticsStore.events.collectAsState()
     val eventActions = remember(eventStore) {
         ScheduleItemActions(scope, context, eventStore, eventWriteMutex)
     }
@@ -475,13 +475,14 @@ fun MainScreen(
         }
         if (showSyncLogs) {
             SyncLogPanel(
-                entries = syncLogEntries,
+                entries = diagnosticsEvents,
                 onClear = {
-                    SyncLog.clear()
+                    DiagnosticsStore.clear()
                 },
                 onClose = { showSyncLogs = false },
                 // 让开右上角悬浮的同步设置按钮。
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 68.dp, end = 8.dp),
+                dropped = DiagnosticsStore.dropped,
             )
         }
     }

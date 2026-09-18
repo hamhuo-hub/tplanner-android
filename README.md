@@ -61,8 +61,15 @@
 `syncOperationId` 负责把重试串成同一件工作，TPlanner 只固定业务字段与事件词典
 （`sync.run.started`、`store.receipt.accepted`、`server.sequence.gap` 等）。
 诊断日志永远是独立缓冲区：写失败只丢日志，绝不影响同步事务；任务正文、口令与
-完整 jCal 一律不写日志。传输成功不等于同步成功——只有
-`store.snapshot.installed` 与 `store.inflight.released` 都出现，手表才允许显示“已同步”。
+完整 jCal 一律不写日志。传输成功不等于同步成功：任何一次成功都必须有
+`store.snapshot.installed`，而本次运行上传或重发了命令时，还必须出现
+`store.receipt.accepted` 与 `store.inflight.released`。
+
+已在手机上落地（契约 §10 第 2 步）：`DiagnosticsStore` 保存最新 5000 条 / 5 MB 的
+JSON Lines 缓冲区（命名空间 `tplanner_diagnostics`，与 canonical store 完全分离），
+同步链路发出 §5.6 的手机侧事件，设置里的同步日志面板只是这份缓冲区的投影。
+`syncOperationId` 跨尝试复用、收敛后清除，所以后台重试仍能串成同一件工作。
+手表、中继、HTTP `traceparent`、服务器与桌面尚未接入。
 
 ## Hop / 跃时表盘（开发中）
 

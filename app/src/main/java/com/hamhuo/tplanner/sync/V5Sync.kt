@@ -1,12 +1,14 @@
 package com.hamhuo.tplanner
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.hamhuo.tplanner.calendar.TPlannerCalendarProjection
+import com.hamhuo.tplanner.diagnostics.DiagnosticsErrorCode
 import com.hamhuo.tplanner.syncv5.V5Http
 import com.hamhuo.tplanner.syncv5.V5Settings
 import com.hamhuo.tplanner.syncv5.V5Store
@@ -27,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * at a time, and installs the snapshot that carries each applied receipt.
  */
 object V5Sync {
+    private const val TAG = "TplannerSync"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlight = AtomicBoolean(false)
 
@@ -40,23 +43,33 @@ object V5Sync {
 
     /** Blocking convergence used by manual refresh, startup and the WorkManager safety net. */
     suspend fun synchronize(context: Context) {
-        val settings = V5Settings(context.applicationContext)
+        val app = context.applicationContext
+        val settings = V5Settings(app)
         val url = settings.url
-        require(url.isNotBlank()) { "请先配置同步地址" }
+        // Another attempt already owns the store: this one never started, so it emits nothing.
         if (!inFlight.compareAndSet(false, true)) return
+        val store = V5Store(app)
+        val run = DiagnosticsStore.beginRun(store.deviceId)
+        run.runStarted(queueDepth = store.pendingCount, inFlightSequence = store.inFlightSequence)
         try {
-            val store = V5Store(context.applicationContext)
-            V5SyncClient(store, V5Http(url)).synchronize()
+            if (url.isBlank()) {
+                run.runDeferred(DiagnosticsErrorCode.NOT_CONFIGURED)
+                throw IllegalArgumentException("请先配置同步地址")
+            }
+            V5SyncClient(store, V5Http(url, run), run).synchronize()
             // A freshly installed snapshot changes the desired calendar state. This is a queued
             // side effect: its failure never affects the synchronization that just succeeded.
-            runCatching { TPlannerCalendarProjection.reconcile(context, store.documents()) }
+            runCatching { TPlannerCalendarProjection.reconcile(app, store.documents()) }
             SyncFeedbackBus.publish(SyncFeedbackEvent.CloudAccepted(runCatching { URI(url).host }.getOrDefault(url)))
-            SyncLog.info("sync", "同步完成")
+            run.runCompleted()
         } catch (error: Exception) {
             SyncFeedbackBus.publish(SyncFeedbackEvent.FailedLocally(error.message))
-            SyncLog.warn("sync", "同步失败，修改仍安全保存在本机", error.message)
+            val errorCode = DiagnosticsErrorCode.of(error)
+            if (DiagnosticsErrorCode.isDeferral(error)) run.runDeferred(errorCode) else run.runFailed(errorCode)
+            Log.w(TAG, "Sync attempt failed ($errorCode)", error)
             throw error
         } finally {
+            DiagnosticsStore.finishRun(converged = store.pendingCount == 0)
             inFlight.set(false)
         }
     }
