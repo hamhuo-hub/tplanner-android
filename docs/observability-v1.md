@@ -22,6 +22,12 @@ belong to the observability backend (OpenTelemetry → SkyWalking OAP), not to t
 A span alone renders `POST /tplanner/v5/batch 409 2.3 ms` and stops. An event alone has no causal
 parent. Neither replaces the other, and every diagnostic line carries both.
 
+One trace is one causal tree. `traceId` is created once, at the origin of an attempt, and is never
+changed along the chain. **Every hop that does work creates its own `spanId` and injects its own
+context downstream.** A hop that forwards a received `traceparent` unchanged declares the next
+service to be a child of a span it never spoke to, and erases itself from the causal tree — which is
+exactly the relationship this layer exists to record.
+
 TPlanner therefore does not invent id formats, does not run a collector, and does not ship a query
 UI. It propagates standard context and emits standard-shaped events.
 
@@ -47,7 +53,34 @@ client changes retry, queue or idempotency behaviour because of a trace value.**
 
 ## 3. Propagation
 
-### 3.1 Phone / Desktop → Server (HTTP)
+### 3.1 The rule at every hop: extract, start a span, inject
+
+No hop forwards a `traceparent` it received. Each hop does the same three standard W3C steps:
+
+```
+receive traceparent            extract  → (traceId, parentSpanId, flags)
+create its own span            start    → new spanId, parentSpanId = extracted spanId
+send downstream                inject   → traceparent carrying its own spanId
+```
+
+The watch-to-server chain therefore reads:
+
+```
+watch      injects traceparent A   (spanId A, no parent)
+  ↓ envelope
+phone      extracts A, starts relay span B (parent A), injects traceparent B
+  ↓ HTTP
+server     extracts B, starts span C (parent B)
+```
+
+`traceId` is identical in A, B and C. `spanId` differs at every hop. The phone relay appears in the
+causal tree as the parent of the server span, which is what actually happens on the wire: the watch
+never talks to the server.
+
+This needs no vendor API. Extract, start-span and inject are the standard Trace Context operations,
+and a hop that legitimately passes metadata along (`tracestate`) still replaces `traceparent`.
+
+### 3.2 Phone / Desktop → Server (HTTP)
 
 ```http
 traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
@@ -55,6 +88,9 @@ tracestate: <optional, pass through>
 X-TPlanner-Sync-Operation: 7c0f5c6e-...
 ```
 
+- The `traceparent` value is always the **sender's own** current span context, produced by §3.1 — for
+  a phone-originated sync that is the sync run span, for a relayed watch exchange it is the relay
+  span, never the watch's value.
 - `traceparent` uses the W3C format verbatim; the sampled flag is `-01` for synchronization runs.
 - `X-TPlanner-Sync-Operation` carries `syncOperationId`, so server events still join client events
   when a retry produced a new trace.
@@ -63,7 +99,7 @@ X-TPlanner-Sync-Operation: 7c0f5c6e-...
 - Android has exactly one place to change: `V5Http.request()` in
   `shared/src/main/kotlin/com/hamhuo/tplanner/syncv5/V5Transport.kt`. Desktop: `src/syncV5/transport.js`.
 
-### 3.2 Watch → Phone (relay envelope)
+### 3.3 Watch → Phone (relay envelope)
 
 The relay envelope from `WatchV5Protocol.request` gains one optional field:
 
@@ -80,8 +116,12 @@ The relay envelope from `WatchV5Protocol.request` gains one optional field:
 
 - `trace` is optional and is not asserted by `validateRequest`. A relay that does not understand it
   ignores it; a watch that gets no `trace` starts a fresh trace at the relay.
-- The relay copies `trace.traceparent` into the outgoing HTTP header unchanged, so one trace covers
-  watch → Data Layer → relay → HTTPS → server → receipt → watch.
+- `trace.traceparent` is the watch's own span context. The relay **extracts** it, starts its own relay
+  span as a child (§3.1), and injects a **new** `traceparent` into the HTTP request. Raw copying is
+  forbidden: it would make the server span a child of the watch span and drop the relay out of the
+  trace. The `traceId` — and therefore `syncOperationId` correlation — is preserved end to end.
+- One trace covers watch → Data Layer → relay → HTTPS → server → receipt → watch, with one span per
+  hop.
 - RFCOMM carries the same JSON envelope, so `trace` needs no separate RFCOMM work.
 - `requestId` stays the per-exchange transport identity. It is an attribute, never the trace id and
   never the operation id.
@@ -135,10 +175,10 @@ the existing V5 protocol JSON.
 | `component` | enum | required | `watch` `phone` `relay` `server` `desktop` |
 | `syncOperationId` | string | required when work is durable | business correlation across attempts |
 | `traceId` | string (32 hex) | required | W3C trace id |
-| `spanId` | string (16 hex) | required | span that emitted this event |
+| `spanId` | string (16 hex) | required | the span that emitted this event; unique per hop (§3.1) |
 | `parentSpanId` | string (16 hex) | optional | absent only on a root span |
 | `attempt` | int ≥ 1 | required with `syncOperationId` | retry counter of that work item |
-| `deviceId` | string (UUID) | required for sync events | V5 device identity |
+| `deviceId` | string (UUID) | see below | V5 device identity |
 | `requestId` | string (UUID) | optional | watch ↔ phone exchange identity |
 | `commandId` | string | required for command events | V5 command identity |
 | `sequence` | int | required for command events | client sequence of that command |
@@ -149,12 +189,40 @@ the existing V5 protocol JSON.
 | `queueDepth` | int | optional | unsent commands at that moment |
 | `inFlightSequence` | int | optional | the command that may not be dropped |
 | `transport` | enum | required for transport events | `datalayer` `rfcomm` `https` |
-| `result` | enum | required | `started` `succeeded` `failed` `replayed` `conflicted` `rejected` |
+| `result` | enum | required | see §4.1 |
 | `errorCode` | string | required when failed | a V5 code (`SEQUENCE_GAP`, `COMMAND_ID_REUSE`, …) or a transport code |
 | `durationMs` | int | required on `*.completed` / `*.failed` | elapsed time of that unit |
 
-`result` repeats what `event` already encodes; it exists so one query can select every failure
-across scopes without matching names.
+`deviceId` presence:
+
+- **required** for every client `sync.*`, `store.*` and `transport.*` event, and for the server's
+  `server.batch.*`, `server.sequence.*`, `server.command.*` and `server.receipt.*` events, where the
+  batch body already carries it;
+- **optional** where the protocol genuinely does not carry a device identity — `server.request.received`
+  and `server.snapshot.served`. `GET /tplanner/v5/snapshot` has no `deviceId`, and observability must
+  not invent one or widen the HTTP contract to obtain it;
+- never guessed, never defaulted, never derived from the bearer token. An unknown field stays absent
+  rather than being filled with a placeholder.
+
+### 4.1 `result`
+
+`result` stays required, and it must be exactly one of these eight values:
+
+| `result` | Meaning | Events that use it |
+| --- | --- | --- |
+| `started` | a unit of work opened | every `*.started` |
+| `succeeded` | the transition completed as intended | `*.completed`, `*.accepted`, `*.applied`, `*.installed`, `*.released`, `*.queued`, `*.prepared`, `*.received`, `*.returned`, `*.forwarded`, `*.served`, `*.validated`, `*.committed` |
+| `failed` | the transition did not complete | `*.failed`, `server.sequence.gap` |
+| `replayed` | an existing result was reused instead of computing a new one | `server.sequence.replay` |
+| `conflicted` | the command lost a race and was preserved for the user | `server.command.conflict` |
+| `rejected` | the command is permanently unacceptable | `server.command.rejected` |
+| `deferred` | the attempt stopped on purpose and stays queued; not a failure | `sync.run.deferred` |
+| `retained` | state was deliberately kept unresolved for the next attempt | `store.receipt.retained`, `store.inflight.retained` |
+
+`result` repeats what `event` already encodes; it exists so one query can select every failure, or
+every deferral, across scopes without matching event names. A transition that has no accurate value
+here means the vocabulary is missing an event, not that a value may be stretched: `deferred` is not
+`failed`, and `retained` is not `failed`.
 
 ## 5. Event vocabulary
 
@@ -185,24 +253,33 @@ transition and `started` for the opening of a unit of work. Scopes are `sync`, `
 
 ### 5.3 Transport — `watch`, `phone`, `desktop`
 
-| Event | Emitted when |
+One exchange emits `transport.request.started`, optional intermediate events, and **exactly one
+terminal event**. The boundary between the response events is fixed here, so a broken read can never
+be reported as a completed request:
+
+| Event | Boundary |
 | --- | --- |
 | `transport.request.started` | an exchange begins on one medium (`transport` attribute) |
-| `transport.request.completed` | the medium accepted and returned bytes |
-| `transport.request.failed` | connect, write or read failed or timed out |
-| `transport.response.received` | a well-formed response frame arrived |
-| `transport.response.failed` | a frame arrived but could not be decoded or read |
-| `transport.fallback.started` | Data Layer gave up and RFCOMM begins |
+| `transport.request.completed` | **terminal, success**: the transport API finished one round trip, the response carrier was obtained, and its envelope was read, parsed, validated and matched to this request. `durationMs` is the whole exchange. |
+| `transport.response.received` | intermediate: a response carrier for this request has arrived, before it is read or parsed. Distinguishes "bytes are here" from "bytes are understood"; emitted only where arrival is separately observable (Data Layer item, HTTP response head, RFCOMM frame). |
+| `transport.response.failed` | **terminal, failure**: a carrier appeared, but reading, decoding or envelope validation/matching failed. The carrier's existence is never upgraded into a completed request. |
+| `transport.request.failed` | **terminal, failure**: no carrier was ever obtained — connect, write, read or timeout failed at the transport API. |
+| `transport.fallback.started` | Data Layer gave up and RFCOMM begins (a new exchange, with its own started/terminal pair) |
 
 `transport.request.completed` and `transport.response.received` prove transport only. They are never
 a synchronization result.
+
+The watch `getFdForAsset` / main-thread incident lands exactly here: the carrier arrived
+(`transport.response.received`), the read failed, so the exchange ends in
+`transport.response.failed` with `errorCode=RESPONSE_UNREADABLE` — and emits no
+`transport.request.completed`, because nothing was understood.
 
 ### 5.4 Relay — `relay` (the phone, on behalf of a watch)
 
 | Event | Emitted when |
 | --- | --- |
 | `relay.request.received` | `WatchV5RelayService` accepted a request envelope |
-| `relay.request.forwarded` | the relay handed the body to `V5Http` with the trace headers |
+| `relay.request.forwarded` | the relay extracted the watch context, started its relay span, and handed the body to `V5Http` with its own trace headers |
 | `relay.response.returned` | the response asset was written back to the Data Layer |
 | `relay.request.failed` | reading the request, the upstream call, or the response write failed |
 
@@ -210,7 +287,7 @@ a synchronization result.
 
 | Event | Emitted when |
 | --- | --- |
-| `server.request.received` | Fastify accepted an authorized V5 request |
+| `server.request.received` | Fastify accepted an authorized V5 request (`deviceId` may be absent) |
 | `server.batch.validated` | the batch envelope passed `validateBatchRequest` |
 | `server.sequence.accepted` | the batch is contiguous with `nextSequence` |
 | `server.sequence.replay` | a `commandId` was recognized and answered from its stored receipt |
@@ -219,7 +296,7 @@ a synchronization result.
 | `server.command.conflict` | one command produced status `conflict` |
 | `server.command.rejected` | one command produced status `rejected` |
 | `server.receipt.committed` | the transaction committed and receipts are permanent |
-| `server.snapshot.served` | a snapshot was returned, with `revision` |
+| `server.snapshot.served` | a snapshot was returned, with `revision` (`deviceId` absent) |
 
 ### 5.6 Minimum set
 
@@ -234,7 +311,7 @@ Any implementation that emits only these is already useful, and they are the fir
 | --- | --- |
 | `DEBUG` | per-step detail, off in production |
 | `INFO` | expected progress; the normal spine of a trace |
-| `WARN` | degraded or retried, still converging (`transport.fallback.started`, `server.sequence.replay`) |
+| `WARN` | degraded, retried, or deliberately deferred, still converging (`transport.fallback.started`, `server.sequence.replay`, `sync.run.deferred`) |
 | `ERROR` | convergence is in doubt or user data is at risk (`server.sequence.gap`, `sync.run.failed`) |
 
 `errorCode` reuses V5's existing codes — `UNAUTHORIZED`, `NOT_FOUND`, `BODY_TOO_LARGE`,
@@ -245,37 +322,48 @@ Any implementation that emits only these is already useful, and they are the fir
 
 ## 7. What "synchronized" is allowed to mean
 
-A sync run may emit `sync.run.completed` only after this whole chain is present in its own
-diagnostics, in order:
+A successful run always converges the local store downwards; it only involves an upload when one was
+actually pending. So the success invariant is conditional, and both branches are strict:
 
 ```
-sync.run.started
-  store.batch.prepared            (when commands exist)
-  transport.request.started
-  transport.request.completed
-  transport.response.received        → relay returned a response
-  store.receipt.accepted             → receipt status applied, commandId matched
-  store.snapshot.installed           → snapshot durably installed at revision R
-  store.inflight.released
-sync.run.completed
+any successful run:
+  sync.run.started
+    transport.request.started
+    transport.response.received           → carrier arrived (§5.3)
+    transport.request.completed           → envelope read, validated, matched
+    store.snapshot.installed              → snapshot durably installed at revision R
+  sync.run.completed
+
+if a command was pending when the run started, additionally, in order:
+    store.batch.prepared
+    store.receipt.accepted                → receipt status applied, commandId matched
+    store.snapshot.installed              → the same install that confirms the receipt
+    store.inflight.released               → in-flight resolved, may be dropped
 ```
 
-Watch-only addition: when the Data Layer response cannot be read, `transport.response.failed` is the
-event — the earlier `Must not be called on the main application thread` incident is exactly this
-event, with `errorCode=RESPONSE_UNREADABLE`.
+A download-only run has no in-flight command, so `store.batch.prepared`, `store.receipt.accepted` and
+`store.inflight.released` are absent by definition — not missing, not failed. `store.snapshot.installed`
+alone satisfies store convergence in that case.
+
+The invariant, stated once:
+
+> **`sync.run.completed` requires `store.snapshot.installed`. If and only if a command was in flight
+> when the run started, it additionally requires `store.receipt.accepted` and `store.inflight.released`.**
 
 | Evidence | Permitted conclusion |
 | --- | --- |
-| Bluetooth/RFCOMM or Data Layer connected | `transport.request.completed` |
-| a response frame arrived | `transport.response.received` |
+| Bluetooth/RFCOMM or Data Layer connected | `transport.request.started`, at most `transport.request.completed` |
+| a response carrier arrived, before parsing | `transport.response.received` |
 | a receipt came back `applied` | `store.receipt.accepted` |
 | a snapshot is durably installed | `store.snapshot.installed` |
-| in-flight released and the chain above is complete | `sync.run.completed` |
+| §7's branch for this run is complete | `sync.run.completed` |
 
 Consequences, both mandatory:
 
-- The watch UI may show "synchronized" only after `sync.run.completed`. "Bluetooth connected" and
-  "Data Layer response received" are transport facts and must never render as a sync result.
+- The watch UI may show "synchronized" only after `sync.run.completed`. With an in-flight command both
+  the receipt and the release must be present; without one, the installed snapshot is the whole
+  criterion. "Bluetooth connected" and "Data Layer response received" are transport facts and must
+  never render as a sync result.
 - The phone may report `SyncPhase.SUCCESS` only after the snapshot install and revision confirm, not
   after a successful HTTP call.
 
@@ -311,22 +399,29 @@ Allowed: opaque ids (`deviceId`, `requestId`, `commandId`, `serverId`, `syncOper
 ## 10. Responsibilities and order
 
 ```
-tplanner-android/   phone diagnostics, watch diagnostics, trace context in
-                    V5Http.request() + WatchV5RelayService, `trace` in WatchV5Protocol
-tplanner-desktop/   the same event schema, trace context in src/syncV5/transport.js
+tplanner-android/   phone diagnostics, watch diagnostics, local trace generator,
+                    trace context in V5Http.request() + WatchV5RelayService,
+                    `trace` in WatchV5Protocol
+tplanner-desktop/   the same event schema and generator, trace context in src/syncV5/transport.js
 tplanner-server/    traceparent extraction, Pino bindings, sequence/receipt events
 ```
 
 Land in this order; each step is independently useful and independently releasable:
 
 1. this document
-2. Android phone: structured diagnostics buffer + the §5.6 minimum set
-3. Watch: structured diagnostics buffer + `transport.response.failed`
-4. `trace` through the Data Layer / RFCOMM relay envelope
+2. Android phone: **local W3C trace context generator** (a fresh `traceId`/root `spanId` per
+   `sync.run.started`, generated locally and not yet propagated) + structured diagnostics buffer +
+   the §5.6 minimum set. This step is what makes steps 2–3 schema-valid: every emitted event already
+   has `traceId` and `spanId` from §4, even though nothing crosses a process boundary yet.
+3. Watch: the same local generator + structured diagnostics buffer + `transport.response.failed`
+4. Propagation into the relay envelope: watch injects `trace` into `WatchV5Protocol`, the phone relay
+   extracts it, starts its relay span and injects its own `traceparent` per §3.1
 5. `traceparent` through HTTP (Android, then Desktop)
-6. Server: Pino events for sequence, command, receipt and snapshot
-7. Desktop: adopt the same schema
+6. Server: `traceparent` extraction, then Pino events for sequence, command, receipt and snapshot
+7. Desktop: adopt the same schema and generator
 8. Reproduce the `SEQUENCE_GAP` and watch-false-success incidents from logs alone
+
+Steps 4–6 add propagation and parenting only; they must not change field names or event names.
 
 Done means: given one `traceId` or one `syncOperationId`, the causal chain of the incident is
 readable without screenshots and without device Logcat.
