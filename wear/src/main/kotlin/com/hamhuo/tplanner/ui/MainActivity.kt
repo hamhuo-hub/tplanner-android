@@ -38,6 +38,9 @@ class MainActivity : ComponentActivity() {
             setNewTaskAction {
                 openTaskCreation()
             }
+            setConflictsAction {
+                startActivity(WatchConflictActivity.createIntent(this@MainActivity))
+            }
             setTaskOpenAction { task ->
                 startActivity(TaskDetailActivity.createIntent(this@MainActivity, task))
             }

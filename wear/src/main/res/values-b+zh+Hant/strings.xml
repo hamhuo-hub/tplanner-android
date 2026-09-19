@@ -27,6 +27,12 @@
     <string name="task_list_syncing">正在同步…</string>
     <string name="task_list_sync_complete">同步完成</string>
     <string name="task_list_sync_failed">同步失敗</string>
+    <string name="sync_conflict_title">同步衝突</string>
+    <plurals name="sync_conflict_pending"><item quantity="other">%1$d 項待處理</item></plurals>
+    <string name="sync_conflict_local_delete">刪除此事項</string>
+    <string name="sync_conflict_explanation">此事項在其他裝置上發生了不同的修改。</string>
+    <string name="sync_conflict_keep_mine">保留我的</string>
+    <string name="sync_conflict_use_server">使用伺服器版本</string>
     <string name="task_list_sync_attention">未完成，有待處理</string>
     <string name="task_list_permission_title">需要藍牙權限</string>
     <string name="task_list_permission_hint">輕觸授權，繼續接收手機清單</string>

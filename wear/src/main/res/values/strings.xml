@@ -27,6 +27,12 @@
     <string name="task_list_syncing">Syncing…</string>
     <string name="task_list_sync_complete">Sync complete</string>
     <string name="task_list_sync_failed">Sync failed</string>
+    <string name="sync_conflict_title">Sync conflict</string>
+    <plurals name="sync_conflict_pending"><item quantity="one">%1$d waiting</item><item quantity="other">%1$d waiting</item></plurals>
+    <string name="sync_conflict_local_delete">Delete this item</string>
+    <string name="sync_conflict_explanation">This item was changed differently on another device.</string>
+    <string name="sync_conflict_keep_mine">Keep mine</string>
+    <string name="sync_conflict_use_server">Use server version</string>
     <string name="task_list_sync_attention">Not finished · needs review</string>
     <string name="task_list_permission_title">Bluetooth permission required</string>
     <string name="task_list_permission_hint">Tap to allow access and keep receiving lists from your phone</string>

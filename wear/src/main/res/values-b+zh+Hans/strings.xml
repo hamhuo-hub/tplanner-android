@@ -27,6 +27,12 @@
     <string name="task_list_syncing">正在同步…</string>
     <string name="task_list_sync_complete">同步完成</string>
     <string name="task_list_sync_failed">同步失败</string>
+    <string name="sync_conflict_title">同步冲突</string>
+    <plurals name="sync_conflict_pending"><item quantity="other">%1$d 项待处理</item></plurals>
+    <string name="sync_conflict_local_delete">删除此事项</string>
+    <string name="sync_conflict_explanation">此事项在其他设备上发生了不同的修改。</string>
+    <string name="sync_conflict_keep_mine">保留我的</string>
+    <string name="sync_conflict_use_server">使用服务器版本</string>
     <string name="task_list_sync_attention">未完成，有待处理</string>
     <string name="task_list_permission_title">需要蓝牙权限</string>
     <string name="task_list_permission_hint">轻触授权，继续接收手机清单</string>

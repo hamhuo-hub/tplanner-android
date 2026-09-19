@@ -306,6 +306,7 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var mainContent: LinearLayout? = null
     private var permissionRequired = false
     private var permissionAction: (() -> Unit)? = null
+    private var conflictsAction: (() -> Unit)? = null
     private var listSelectionAction: (() -> Unit)? = null
     private var newTaskAction: (() -> Unit)? = null
     private var taskOpenAction: ((WatchEventMarks.NextTask) -> Unit)? = null
@@ -391,6 +392,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
 
         marks = WatchEventMarks.load(context)
         rebuildMainPage()
+    }
+
+    fun setConflictsAction(listener: (() -> Unit)?) {
+        conflictsAction = listener
     }
 
     fun setPermissionAction(listener: (() -> Unit)?) {
@@ -632,6 +637,25 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
                     onClick = {
                         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                         permissionAction?.invoke()
+                    },
+                ),
+                cardLayoutParams(),
+            )
+        }
+
+        val conflicts = WatchV5Store.conflicts(context)
+        if (conflicts.isNotEmpty()) {
+            content.addView(
+                stateCard(
+                    title = context.getString(R.string.sync_conflict_title),
+                    subtitle = context.resources.getQuantityString(
+                        R.plurals.sync_conflict_pending,
+                        conflicts.size,
+                        conflicts.size,
+                    ),
+                    onClick = {
+                        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        conflictsAction?.invoke()
                     },
                 ),
                 cardLayoutParams(),
