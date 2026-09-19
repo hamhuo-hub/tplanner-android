@@ -149,12 +149,27 @@ the first. A queued command has no sequence yet: it may be edited, coalesced or 
 freely. An in-flight command already owns a `commandId` and a `sequence` the server may have
 consumed, so deleting it — from a draft discard, a draft cleanup, or any other UI lifecycle —
 silently breaks the device's contiguous sequence space and the server then rejects every
-later batch with `SEQUENCE_GAP`. A discard that targets the in-flight UID is therefore
-deferred: the device hides that document immediately and remembers the intent, then, once
-the receipt resolves, either sends a real tombstone for the UID at the next sequence
-(status `applied`) or drops it with nothing to reconcile (status `conflict`/`rejected`).
-A newer edit of the same UID cancels the deferred discard, because the new edit is the
-user's current intent.
+later batch with `SEQUENCE_GAP`.
+
+A discard that targets the in-flight UID is therefore split into two facts. The user's
+intent is recorded as a suppression set of UIDs: the document disappears from the UI
+immediately, and that set is pure UI intent — it never carries a `commandId`, `sequence` or
+`baseRevision`, so it can never become a second source of sequence truth. The protocol side
+is settled by the receipt, and the suppression lasts until it is:
+
+- `applied` — the content is on the server now. Deleting the local command would let the next
+  snapshot resurrect the document, so the discard is completed by a real tombstone: an
+  ordinary delete command that goes `queue → inFlight` at the next sequence under a new
+  `commandId`. The UID stays hidden until that tombstone is applied, at which point the
+  record itself is a tombstone and the suppression is dropped.
+- `conflict` / `rejected` — nothing of this edit landed. There is nothing to reconcile and
+  no conflict to offer the user: the discard was already their decision, so the local side is
+  dropped and the suppression cleared. If the server holds an older accepted version of that
+  UID, that version simply becomes visible again, and a brand-new document stays gone.
+
+A newer edit of the same UID cancels the suppression, because the new edit is the user's
+current intent; the store's own tombstone does not, since it is the cleanup of that very
+discard.
 
 `SEQUENCE_GAP` is recoverable only by the new-identity rule above: keep every local
 document and pending edit, mint a new `deviceId`, restart `nextSequence` at 1, and return an
