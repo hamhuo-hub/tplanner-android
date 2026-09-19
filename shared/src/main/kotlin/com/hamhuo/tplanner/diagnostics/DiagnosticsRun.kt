@@ -112,9 +112,19 @@ class DiagnosticsRun(
 
     inner class Exchange(val transport: String) {
         private val span = context.child()
-        private val startedAt = clock()
+
+        /**
+         * This exchange's own clock, never the run's.
+         *
+         * An inner class that falls through to the outer `elapsed()` measures from the run's start,
+         * which made a later exchange report the whole run's age: a second snapshot round trip of
+         * ~0.5 s was recorded as 4201 ms. Name and receiver are kept distinct so that cannot return.
+         */
+        private val spanStartedAt = clock()
         private var carrierArrived = false
         private var terminal = false
+
+        private fun elapsed(): Long = clock() - spanStartedAt
 
         fun started() = record(
             DiagnosticsEvents.TRANSPORT_REQUEST_STARTED, DiagnosticsLevel.INFO, DiagnosticsResult.STARTED, span,

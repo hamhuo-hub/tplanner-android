@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.hamhuo.tplanner.diagnostics.Diagnostics
+import com.hamhuo.tplanner.diagnostics.DiagnosticsConsole
 import com.hamhuo.tplanner.diagnostics.DiagnosticsEvent
 import com.hamhuo.tplanner.diagnostics.DiagnosticsRun
 import com.hamhuo.tplanner.diagnostics.DiagnosticsSink
@@ -82,6 +83,9 @@ object DiagnosticsStore : DiagnosticsSink {
 
     override fun append(event: DiagnosticsEvent) {
         worker.execute {
+            // 先在诊断线程上打一行 logcat，再落盘：调用方（同步）线程只做了入队，两边都不被拖慢。
+            // 代价是 logcat 会先于落盘出现 —— 紧随其后的 "Dropped" 才是这条事件没进文件的意思。
+            DiagnosticsConsole.log(event)
             runCatching { write(event) }.onFailure {
                 droppedEvents.incrementAndGet()
                 Log.w(TAG, "Dropped diagnostics event ${event.event}", it)

@@ -16,11 +16,13 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
+import android.os.SystemClock
 import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
 import android.text.TextUtils
+import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -53,6 +55,11 @@ enum class WatchListFilter(val key: String) {
             entries.firstOrNull { it.key == key } ?: INBOX
     }
 }
+
+/** One frame at 60 Hz: a rebuild past this is already a dropped frame worth logging. */
+private const val REFRESH_TRACE_MS = 16L
+
+private const val TAG = "TplannerWearUi"
 
 internal fun Context.watchListName(filter: WatchListFilter): String = getString(
     when (filter) {
@@ -304,6 +311,10 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
     private var collapseStartPx = dp(LARGE_TITLE_TOP_MARGIN_DP + NEW_BUTTON_SIZE_DP)
     private var mainScroll: ScrollView? = null
     private var mainContent: LinearLayout? = null
+    private var rebuildScheduled = false
+    private var coalescedRefreshes = 0
+    private var pendingFeedback = false
+    private var lastRebuildAtMs = 0L
     private var permissionRequired = false
     private var permissionAction: (() -> Unit)? = null
     private var conflictsAction: (() -> Unit)? = null
@@ -464,11 +475,46 @@ class NextDashboardView(context: Context) : FrameLayout(context) {
         rebuildMainPage()
     }
 
+    /**
+     * Rebuilds the dashboard from the durable store.
+     *
+     * One synchronization writes the store several times (receipt, each snapshot install, error) and
+     * every write notifies the subscription, so several refresh requests arrive within a few
+     * milliseconds of each other. They are coalesced into one rebuild on the next loop turn: the
+     * rebuild always reads the latest state, so dropping the redundant ones loses nothing, and a
+     * burst of store writes no longer becomes a burst of full view rebuilds (which is what produced
+     * a 735 ms frame on the watch).
+     */
     fun refreshContent(showFeedback: Boolean) {
-        marks = WatchEventMarks.load(context)
-        rebuildMainPage()
-        if (showFeedback && !permissionRequired) {
-            announceForAccessibility(context.getString(R.string.task_list_updated))
+        coalescedRefreshes++
+        pendingFeedback = pendingFeedback || showFeedback
+        if (rebuildScheduled) return
+        rebuildScheduled = true
+        post {
+            rebuildScheduled = false
+            val requests = coalescedRefreshes
+            coalescedRefreshes = 0
+            val announce = pendingFeedback && !permissionRequired
+            pendingFeedback = false
+
+            val loadStartedAt = SystemClock.elapsedRealtime()
+            marks = WatchEventMarks.load(context)
+            val loadedAt = SystemClock.elapsedRealtime()
+            rebuildMainPage()
+            val builtAt = SystemClock.elapsedRealtime()
+
+            // 只在"被合并过"或"这一帧明显偏慢"时留痕：既能证明重复 rebuild 是否还在，
+            // 也能把耗时拆成解析（load）与建视图（rebuild）两段。
+            if (requests > 1 || builtAt - loadStartedAt >= REFRESH_TRACE_MS) {
+                Log.d(
+                    TAG,
+                    "refresh: requests=$requests load=${loadedAt - loadStartedAt}ms " +
+                        "rebuild=${builtAt - loadedAt}ms tasks=${marks.items.size} " +
+                        "sinceLast=${loadStartedAt - lastRebuildAtMs}ms",
+                )
+            }
+            lastRebuildAtMs = builtAt
+            if (announce) announceForAccessibility(context.getString(R.string.task_list_updated))
         }
     }
 
